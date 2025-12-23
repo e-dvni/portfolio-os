@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { APPS } from "../data/apps";
 import { WindowManager } from "../windowing/WindowManager";
 import { useWindowStore } from "../windowing/useWindowStore";
 import { LauncherProvider } from "./LauncherProvider";
 import { AboutModal } from "./AboutModal";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 
+import { APPS as FALLBACK_APPS, type AppDef } from "../data/apps";
+import { fetchApps } from "../data/api";
+import { toAppDef } from "../data/adapters";
+import { AppRegistryProvider } from "./appRegistryProvider";
+
 export function Desktop() {
   const wm = useWindowStore();
 
-  const desktopApps = useMemo(() => APPS.filter((a) => a.desktop), []);
-  const dockApps = useMemo(() => APPS.filter((a) => a.dock), []);
+  const [apps, setApps] = useState<AppDef[]>(FALLBACK_APPS);
+  const [appsSource, setAppsSource] = useState<"api" | "fallback">("fallback");
 
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -18,34 +22,61 @@ export function Desktop() {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
 
+  // Load apps from Rails API (fallback if down)
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const apiApps = await fetchApps();
+        const mapped = apiApps.map(toAppDef);
+
+        // Sort like Rails order_index (already sorted server-side, but safe)
+        const sorted = mapped;
+
+        if (alive && sorted.length) {
+          setApps(sorted);
+          setAppsSource("api");
+        }
+      } catch {
+        if (alive) {
+          setApps(FALLBACK_APPS);
+          setAppsSource("fallback");
+        }
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const desktopApps = useMemo(() => apps.filter((a) => a.desktop), [apps]);
+  const dockApps = useMemo(() => apps.filter((a) => a.dock), [apps]);
+
   const openApp = useCallback(
     (id: string) => {
-      const app = APPS.find((a) => a.id === id);
+      const app = apps.find((a) => a.id === id);
       if (!app) return;
 
       wm.open(app);
-
-      // clean UI state when opening something
       setSpotlightOpen(false);
       setQuery("");
       setMenu(null);
     },
-    [wm] // wm is stable enough; if you ever change useWindowStore to return new fns each render, we’ll destructure below
+    [apps, wm]
   );
 
-  // Spotlight results
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return APPS.filter(
+    return apps.filter(
       (a) => a.name.toLowerCase().includes(q) || a.windowTitle.toLowerCase().includes(q)
     );
-  }, [query]);
+  }, [query, apps]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // ⌘K / Ctrl+K => Spotlight toggle
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setSpotlightOpen((v) => !v);
@@ -65,7 +96,6 @@ export function Desktop() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Build context menu items (typed) with correct deps
   const contextItems: ContextMenuItem[] = useMemo(
     () => [
       { kind: "item", label: "Open Finder", onClick: () => openApp("finder") },
@@ -75,105 +105,117 @@ export function Desktop() {
       { kind: "separator" },
       { kind: "item", label: "About This Mac", onClick: () => setAboutOpen(true) },
     ],
-    [openApp, wm] // ✅ includes openApp, matches inferred deps
+    [openApp, wm]
   );
 
   return (
-    <LauncherProvider openApp={openApp}>
-      <div className="mac-root">
-        <div className="wallpaper" />
+    <AppRegistryProvider apps={apps}>
+      <LauncherProvider openApp={openApp}>
+        <div className="mac-root">
+          <div className="wallpaper" />
 
-        <div className="menu-bar">
-          <div className="apple-dot" />
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Daniel Lee</div>
-          <div style={{ marginLeft: 10, fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
-            Portfolio OS
-          </div>
-          <div style={{ marginLeft: "auto", fontSize: 12, color: "rgba(255,255,255,0.65)" }}>
-            ⌘K Spotlight
-          </div>
-        </div>
-
-        <div
-          className="desktop"
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setSpotlightOpen(false);
-            setMenu({ x: e.clientX, y: e.clientY });
-          }}
-          onMouseDown={() => {
-            if (menu) setMenu(null);
-          }}
-        >
-          <div className="desktop-icons">
-            {desktopApps.map((app) => (
-              <div
-                key={app.id}
-                className="icon"
-                onDoubleClick={() => openApp(app.id)}
-                title="Double click to open"
-              >
-                <img src={app.icon} alt={app.name} />
-                <span>{app.name}</span>
-              </div>
-            ))}
-          </div>
-
-          <WindowManager
-            wins={wm.wins}
-            onClose={wm.close}
-            onFocus={wm.focus}
-            onMove={wm.move}
-            onResize={wm.resize}
-          />
-
-          <div className="dock">
-            {dockApps.map((app) => (
-              <div
-                key={app.id}
-                className="dock-item"
-                onClick={() => openApp(app.id)}
-                title={app.name}
-              >
-                <img src={app.icon} alt={app.name} />
-              </div>
-            ))}
-          </div>
-
-          {spotlightOpen && (
-            <div className="spotlight">
-              <input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search apps…"
-              />
-              <div className="spotlight-results">
-                {(results.length ? results : APPS.slice(0, 8)).map((app) => (
-                  <div key={app.id} className="spotlight-item" onClick={() => openApp(app.id)}>
-                    <img src={app.icon} alt="" style={{ width: 18, height: 18 }} />
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{app.name}</div>
-                      <small>{app.windowTitle}</small>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <div className="menu-bar">
+            <div className="apple-dot" />
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Daniel Lee</div>
+            <div style={{ marginLeft: 10, fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+              Portfolio OS
             </div>
-          )}
 
-          {menu && (
-            <ContextMenu
-              x={menu.x}
-              y={menu.y}
-              onClose={() => setMenu(null)}
-              items={contextItems}
+            <div style={{ marginLeft: "auto", fontSize: 12, color: "rgba(255,255,255,0.65)" }}>
+              ⌘K Spotlight
+            </div>
+
+            {/* subtle “data source” indicator */}
+            <div style={{ marginLeft: 12, fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
+              {appsSource === "api" ? "API" : "Local"}
+            </div>
+          </div>
+
+          <div
+            className="desktop"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setSpotlightOpen(false);
+              setMenu({ x: e.clientX, y: e.clientY });
+            }}
+            onMouseDown={() => {
+              if (menu) setMenu(null);
+            }}
+          >
+            <div className="desktop-icons">
+              {desktopApps.map((app) => (
+                <div
+                  key={app.id}
+                  className="icon"
+                  onDoubleClick={() => openApp(app.id)}
+                  title="Double click to open"
+                >
+                  <img src={app.icon} alt={app.name} />
+                  <span>{app.name}</span>
+                </div>
+              ))}
+            </div>
+
+            <WindowManager
+              wins={wm.wins}
+              onClose={wm.close}
+              onFocus={wm.focus}
+              onMove={wm.move}
+              onResize={wm.resize}
             />
-          )}
 
-          {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+            <div className="dock">
+              {dockApps.map((app) => (
+                <div
+                  key={app.id}
+                  className="dock-item"
+                  onClick={() => openApp(app.id)}
+                  title={app.name}
+                >
+                  <img src={app.icon} alt={app.name} />
+                </div>
+              ))}
+            </div>
+
+            {spotlightOpen && (
+              <div className="spotlight">
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search apps…"
+                />
+                <div className="spotlight-results">
+                  {(results.length ? results : apps.slice(0, 8)).map((app) => (
+                    <div
+                      key={app.id}
+                      className="spotlight-item"
+                      onClick={() => openApp(app.id)}
+                    >
+                      <img src={app.icon} alt="" style={{ width: 18, height: 18 }} />
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{app.name}</div>
+                        <small>{app.windowTitle}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {menu && (
+              <ContextMenu
+                x={menu.x}
+                y={menu.y}
+                onClose={() => setMenu(null)}
+                items={contextItems}
+              />
+            )}
+
+            {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
+          </div>
         </div>
-      </div>
-    </LauncherProvider>
+      </LauncherProvider>
+    </AppRegistryProvider>
   );
 }

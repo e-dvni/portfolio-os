@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { APPS } from "../data/apps";
+import { useAppRegistry } from "../app/appRegistryContext";
 import { useLauncher } from "../app/launcherContext";
 
 type FinderSection = "projects" | "education" | "links";
@@ -13,6 +13,7 @@ type FinderItem = {
 
 export function FinderApp() {
   const { openApp } = useLauncher();
+  const { getApp } = useAppRegistry(); // ✅ hook at top level
 
   const sections = useMemo(
     () => [
@@ -26,8 +27,6 @@ export function FinderApp() {
   const [active, setActive] = useState<FinderSection>("projects");
 
   const itemsBySection: Record<FinderSection, FinderItem[]> = useMemo(() => {
-    const getApp = (id: string) => APPS.find((a) => a.id === id);
-
     const resume = getApp("resume");
     const led = getApp("led-builder");
     const admin = getApp("admin");
@@ -58,7 +57,7 @@ export function FinderApp() {
           id: "e1",
           title: "Harvard CS50",
           subtitle: "Currently enrolled — CS fundamentals",
-          appId: "about", // opens Notes (About) for now
+          appId: "about",
         },
         {
           id: "e2",
@@ -84,7 +83,7 @@ export function FinderApp() {
         { id: "l3", title: "Contact (Mail)", subtitle: "Send me an email", appId: "mail" },
       ],
     };
-  }, []);
+  }, [getApp]); // ✅ correct dependency
 
   const title =
     active === "projects" ? "Projects" : active === "education" ? "Education" : "Links";

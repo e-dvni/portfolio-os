@@ -1,6 +1,8 @@
-import { APPS } from "../data/apps";
-import { WindowFrame } from "./WindowFrame";
+import { useEffect } from "react";
 import type { WindowState } from "./types";
+import { WindowFrame } from "./WindowFrame";
+import { useAppRegistry } from "../app/appRegistryContext";
+
 import { PdfViewerApp } from "../apps/PdfViewerApp";
 import { IframeApp } from "../apps/IframeApp";
 import { NotesApp } from "../apps/NotesApp";
@@ -9,19 +11,8 @@ import { TerminalApp } from "../apps/TerminalApp";
 import { MailApp } from "../apps/MailApp";
 import { AdminDashboardApp } from "../apps/AdminDashboardApp";
 
-function renderApp(appId: string) {
-  const app = APPS.find((a) => a.id === appId);
-  if (!app) return <div style={{ padding: 16 }}>App not found</div>;
-
-  if (app.type === "pdf") return <PdfViewerApp src={app.url!} />;
-  if (app.type === "iframe") return <IframeApp src={app.url!} />;
-  if (app.type === "external") {
-    window.open(app.url!, "_blank", "noopener,noreferrer");
-    return <div style={{ padding: 16 }}>Opening {app.name}…</div>;
-  }
-
-  // internal apps
-  switch (app.internalKey) {
+function InternalApp({ internalKey }: { internalKey?: string }) {
+  switch (internalKey) {
     case "notes":
       return <NotesApp />;
     case "finder":
@@ -45,21 +36,45 @@ export function WindowManager(props: {
   onResize: (winId: string, w: number, h: number) => void;
 }) {
   const { wins, onClose, onFocus, onMove, onResize } = props;
+  const { getApp } = useAppRegistry();
 
   return (
     <>
-      {wins.map((win) => (
-        <WindowFrame
-          key={win.winId}
-          win={win}
-          onClose={() => onClose(win.winId)}
-          onFocus={() => onFocus(win.winId)}
-          onMove={(x, y) => onMove(win.winId, x, y)}
-          onResize={(w, h) => onResize(win.winId, w, h)}
-        >
-          {renderApp(win.appId)}
-        </WindowFrame>
-      ))}
+      {wins.map((win) => {
+        const app = getApp(win.appId);
+
+        return (
+          <WindowFrame
+            key={win.winId}
+            win={win}
+            onClose={() => onClose(win.winId)}
+            onFocus={() => onFocus(win.winId)}
+            onMove={(x, y) => onMove(win.winId, x, y)}
+            onResize={(w, h) => onResize(win.winId, w, h)}
+          >
+            {!app ? (
+              <div style={{ padding: 16 }}>App not found</div>
+            ) : app.type === "pdf" ? (
+              <PdfViewerApp src={app.url!} />
+            ) : app.type === "iframe" ? (
+              <IframeApp src={app.url!} />
+            ) : app.type === "external" ? (
+              // external app: open in new tab and show message
+              <ExternalOpener url={app.url!} />
+            ) : (
+              <InternalApp internalKey={app.internalKey} />
+            )}
+          </WindowFrame>
+        );
+      })}
     </>
   );
+}
+
+function ExternalOpener({ url }: { url: string }) {
+  useEffect(() => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, [url]);
+
+  return <div style={{ padding: 16 }}>Opening…</div>;
 }
