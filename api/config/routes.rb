@@ -7,6 +7,7 @@ Rails.application.routes.draw do
 
     namespace :admin do
       post "login", to: "sessions#create"
+      resources :projects, only: [:index, :create, :update, :destroy]
       get "me", to: "sessions#me"
       delete "logout", to: "sessions#destroy"
       patch "notes/:slug", to: "notes#update"

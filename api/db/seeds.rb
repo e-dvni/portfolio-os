@@ -37,7 +37,7 @@ apps = [
   {
     name: "Resume.pdf",
     slug: "resume",
-    icon: "/icons/pdf.png",
+    icon: "/icons/resume.png",
     app_type: "pdf",
     window_title: "Resume.pdf",
     default_w: 900,
@@ -51,7 +51,7 @@ apps = [
   {
     name: "Custom LED Builder",
     slug: "led-builder",
-    icon: "/icons/led.png",
+    icon: "/icons/ledJungle.png",
     app_type: "iframe",
     window_title: "Custom LED Builder — LED Jungle",
     default_w: 1100,
@@ -65,7 +65,7 @@ apps = [
   {
     name: "Admin Dashboard",
     slug: "admin",
-    icon: "/icons/dashboard.png",
+    icon: "/icons/signAvenue.png",
     app_type: "internal",
     window_title: "Admin Dashboard — Sign Avenue",
     default_w: 1100,
@@ -79,7 +79,7 @@ apps = [
   {
     name: "About Me",
     slug: "about",
-    icon: "/icons/notes.png",
+    icon: "/icons/aboutMe.png",
     app_type: "internal",
     window_title: "Notes — About Me",
     default_w: 720,
@@ -163,7 +163,7 @@ apps = [
   {
     name: "Admin CMS",
     slug: "admin-cms",
-    icon: "/icons/admin.png",
+    icon: "/icons/cms.png",
     app_type: "internal",
     window_title: "Admin CMS",
     default_w: 860,
