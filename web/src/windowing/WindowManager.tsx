@@ -10,6 +10,7 @@ import { FinderApp } from "../apps/FinderApp";
 import { TerminalApp } from "../apps/TerminalApp";
 import { MailApp } from "../apps/MailApp";
 import { AdminDashboardApp } from "../apps/AdminDashboardApp";
+import { AdminCmsApp } from "../apps/AdminCmsApp";
 
 function InternalApp({ internalKey }: { internalKey?: string }) {
   switch (internalKey) {
@@ -23,6 +24,8 @@ function InternalApp({ internalKey }: { internalKey?: string }) {
       return <MailApp />;
     case "admin":
       return <AdminDashboardApp />;
+    case "admin-cms":
+      return <AdminCmsApp />;
     default:
       return <div style={{ padding: 16 }}>Unknown internal app</div>;
   }

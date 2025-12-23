@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppRegistry } from "../app/appRegistryContext";
 import { useLauncher } from "../app/launcherContext";
+import { fetchProjects } from "../data/api";
 
 type FinderSection = "projects" | "education" | "links";
 
@@ -11,9 +12,74 @@ type FinderItem = {
   appId: string;
 };
 
+type ApiProject = {
+  title: string;
+  subtitle: string | null;
+  tech_stack: string | null;
+  summary: string | null;
+  repo_url: string | null;
+  live_url: string | null;
+  highlights: unknown;
+};
+
 export function FinderApp() {
   const { openApp } = useLauncher();
-  const { getApp } = useAppRegistry(); // ✅ hook at top level
+  const { getApp } = useAppRegistry();
+
+  const [active, setActive] = useState<FinderSection>("projects");
+
+  // Projects from API (fallback to local app-based list)
+  const [projectItems, setProjectItems] = useState<FinderItem[]>([]);
+  const [projectSource, setProjectSource] = useState<"api" | "fallback">("fallback");
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const projects: ApiProject[] = await fetchProjects();
+
+        if (!alive) return;
+
+        // Map API projects into “openable” items.
+        // For now: route “Admin Dashboard” -> admin app, “Custom LED Builder” -> led-builder,
+        // otherwise open “about” (later we’ll add a real Projects window).
+        const mapped: FinderItem[] = projects.map((p, idx) => {
+          const title = p.title ?? `Project ${idx + 1}`;
+
+          const normalized = title.toLowerCase();
+          const appId =
+            normalized.includes("admin") ? "admin" :
+            normalized.includes("led") ? "led-builder" :
+            normalized.includes("resume") ? "resume" :
+            "about";
+
+          const subtitle =
+            p.subtitle ??
+            p.tech_stack ??
+            "Click to open";
+
+          return {
+            id: `api-${idx}`,
+            title,
+            subtitle,
+            appId,
+          };
+        });
+
+        setProjectItems(mapped.length ? mapped : []);
+        setProjectSource(mapped.length ? "api" : "fallback");
+      } catch {
+        // keep fallback
+        setProjectItems([]);
+        setProjectSource("fallback");
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const sections = useMemo(
     () => [
@@ -24,34 +90,35 @@ export function FinderApp() {
     []
   );
 
-  const [active, setActive] = useState<FinderSection>("projects");
-
   const itemsBySection: Record<FinderSection, FinderItem[]> = useMemo(() => {
+    // Fallback list based on apps registry
     const resume = getApp("resume");
     const led = getApp("led-builder");
     const admin = getApp("admin");
 
+    const fallbackProjects: FinderItem[] = [
+      {
+        id: "p1",
+        title: admin?.name ?? "Admin Dashboard",
+        subtitle: "Auth • Project tracking • Scheduling • CRM tools",
+        appId: "admin",
+      },
+      {
+        id: "p2",
+        title: led?.name ?? "Custom LED Builder",
+        subtitle: "Live builder (iframe) — later: native demo app",
+        appId: "led-builder",
+      },
+      {
+        id: "p3",
+        title: resume?.name ?? "Resume.pdf",
+        subtitle: "Open my resume (PDF)",
+        appId: "resume",
+      },
+    ];
+
     return {
-      projects: [
-        {
-          id: "p1",
-          title: admin?.name ?? "Admin Dashboard",
-          subtitle: "Auth • Project tracking • Scheduling • CRM tools",
-          appId: "admin",
-        },
-        {
-          id: "p2",
-          title: led?.name ?? "Custom LED Builder",
-          subtitle: "Live builder (iframe) — later: native demo app",
-          appId: "led-builder",
-        },
-        {
-          id: "p3",
-          title: resume?.name ?? "Resume.pdf",
-          subtitle: "Open my resume (PDF)",
-          appId: "resume",
-        },
-      ],
+      projects: projectItems.length ? projectItems : fallbackProjects,
       education: [
         {
           id: "e1",
@@ -83,7 +150,7 @@ export function FinderApp() {
         { id: "l3", title: "Contact (Mail)", subtitle: "Send me an email", appId: "mail" },
       ],
     };
-  }, [getApp]); // ✅ correct dependency
+  }, [getApp, projectItems]);
 
   const title =
     active === "projects" ? "Projects" : active === "education" ? "Education" : "Links";
@@ -133,9 +200,11 @@ export function FinderApp() {
           );
         })}
 
-        <div style={{ marginTop: 14, fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
-          Tip: click an item to open it
-        </div>
+        {active === "projects" && (
+          <div style={{ marginTop: 14, fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
+            Source: {projectSource === "api" ? "Rails API" : "Local fallback"}
+          </div>
+        )}
       </div>
 
       {/* Main */}

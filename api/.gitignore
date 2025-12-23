@@ -7,9 +7,6 @@
 # Ignore bundler config.
 /.bundle
 
-# Ignore all environment files.
-/.env*
-
 # Ignore all logfiles and tempfiles.
 /log/*
 /tmp/*
@@ -31,3 +28,6 @@
 # Ignore key files for decrypting credentials and more.
 /config/*.key
 
+# env
+.env
+.env.*

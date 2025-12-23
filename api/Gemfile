@@ -29,9 +29,13 @@ gem "thruster", require: false
 # Images
 gem "image_processing", "~> 1.2"
 
+# Secure Password
+gem "bcrypt", "~> 3.1.7"
+
 group :development, :test do
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
   gem "bundler-audit", require: false
   gem "brakeman", require: false
   gem "rubocop-rails-omakase", require: false
+  gem "dotenv-rails"
 end

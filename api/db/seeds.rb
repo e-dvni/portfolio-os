@@ -1,6 +1,37 @@
-App.destroy_all
-Note.destroy_all
-Project.destroy_all
+# frozen_string_literal: true
+
+# Seeds should be SAFE to run multiple times.
+# This file is designed to be idempotent (no duplicate rows, no destroy_all).
+
+puts "Seeding Portfolio OS…"
+
+# ---------- Helpers ----------
+
+def upsert_app!(attrs)
+  slug = attrs.fetch(:slug)
+  app = App.find_or_initialize_by(slug: slug)
+  app.assign_attributes(attrs)
+  app.save!
+  app
+end
+
+def upsert_note!(attrs)
+  slug = attrs.fetch(:slug)
+  note = Note.find_or_initialize_by(slug: slug)
+  note.assign_attributes(attrs)
+  note.save!
+  note
+end
+
+def upsert_project!(attrs)
+  title = attrs.fetch(:title)
+  project = Project.find_or_initialize_by(title: title)
+  project.assign_attributes(attrs)
+  project.save!
+  project
+end
+
+# ---------- Apps ----------
 
 apps = [
   {
@@ -129,11 +160,28 @@ apps = [
     launch_url: "https://www.linkedin.com/in/daniel-lee-7157a31a8/",
     internal_key: nil
   },
+  {
+    name: "Admin CMS",
+    slug: "admin-cms",
+    icon: "/icons/admin.png",
+    app_type: "internal",
+    window_title: "Admin CMS",
+    default_w: 860,
+    default_h: 600,
+    desktop: false,
+    dock: true,
+    order_index: 20,
+    launch_url: nil,
+    internal_key: "admin-cms"
+  }
 ]
 
-apps.each { |a| App.create!(a) }
+apps.each { |attrs| upsert_app!(attrs) }
+puts "✅ Apps seeded: #{App.count}"
 
-Note.create!(
+# ---------- Notes ----------
+
+upsert_note!(
   slug: "about",
   title: "About Me",
   body: <<~TEXT
@@ -145,7 +193,11 @@ Note.create!(
   TEXT
 )
 
-Project.create!(
+puts "✅ Notes seeded: #{Note.count}"
+
+# ---------- Projects ----------
+
+upsert_project!(
   title: "Custom LED Builder (LED Jungle)",
   subtitle: "Dynamic pricing + live preview builder",
   tech_stack: "Shopify • Liquid • JavaScript",
@@ -157,7 +209,7 @@ Project.create!(
   order_index: 1
 )
 
-Project.create!(
+upsert_project!(
   title: "Sign Avenue Admin Dashboard",
   subtitle: "Project tracking + scheduling + CRM workflows",
   tech_stack: "Vite React • Rails • Postgres",
@@ -168,3 +220,25 @@ Project.create!(
   media: [],
   order_index: 2
 )
+
+puts "✅ Projects seeded: #{Project.count}"
+
+# ---------- Admin User ----------
+
+admin_email = ENV["ADMIN_EMAIL"].to_s.strip.downcase
+admin_password = ENV["ADMIN_PASSWORD"].to_s
+
+if admin_email.present? && admin_password.present?
+  admin = AdminUser.find_or_initialize_by(email: admin_email)
+
+  # Only set password when creating the user or missing digest
+  if admin.new_record? || admin.password_digest.blank?
+    admin.password = admin_password
+  end
+
+  admin.save!
+  puts "✅ Admin user ensured: #{admin.email}"
+else
+  puts "⚠️ ADMIN_EMAIL / ADMIN_PASSWORD not set — skipping admin user seed."
+end
+
