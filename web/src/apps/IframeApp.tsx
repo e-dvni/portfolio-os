@@ -1,4 +1,3 @@
-// web/src/apps/IframeApp.tsx
 import { useEffect, useState } from "react";
 
 type Props = {
@@ -10,14 +9,20 @@ export function IframeApp({ src, title = "External App" }: Props) {
   const [failed, setFailed] = useState(false);
   const [timerDone, setTimerDone] = useState(false);
 
-  // If the site blocks iframe, we won’t reliably get an onError event.
-  // So we also use a timeout fallback to show the “Open in new tab” UI.
+  // When src changes, remount iframe state by using effects that only set state asynchronously
   useEffect(() => {
-    setFailed(false);
-    setTimerDone(false);
+    // reset flags safely on next tick (avoids “sync setState in effect” warnings in strict tooling)
+    const r = window.setTimeout(() => {
+      setFailed(false);
+      setTimerDone(false);
+    }, 0);
 
     const t = window.setTimeout(() => setTimerDone(true), 2500);
-    return () => window.clearTimeout(t);
+
+    return () => {
+      window.clearTimeout(r);
+      window.clearTimeout(t);
+    };
   }, [src]);
 
   const showFallback = failed || timerDone;
@@ -37,7 +42,7 @@ export function IframeApp({ src, title = "External App" }: Props) {
       >
         <div style={{ fontWeight: 700 }}>{title}</div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <button onClick={openNewTab} style={btn}>
+          <button onClick={openNewTab} style={btn} type="button">
             Open Live ↗
           </button>
         </div>
@@ -46,10 +51,10 @@ export function IframeApp({ src, title = "External App" }: Props) {
       <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
         {!showFallback ? (
           <iframe
+            key={src} // ensures a real remount when src changes
             src={src}
             title={title}
             style={{ border: 0, width: "100%", height: "100%" }}
-            // onError is not guaranteed for iframe block cases, but harmless to keep
             onError={() => setFailed(true)}
           />
         ) : (
@@ -71,7 +76,7 @@ export function IframeApp({ src, title = "External App" }: Props) {
               </div>
 
               <div style={{ marginTop: 14, display: "flex", justifyContent: "center", gap: 10 }}>
-                <button onClick={openNewTab} style={btn}>
+                <button onClick={openNewTab} style={btn} type="button">
                   Open Live Builder ↗
                 </button>
               </div>

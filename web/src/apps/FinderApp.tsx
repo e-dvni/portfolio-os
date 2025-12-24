@@ -7,10 +7,11 @@ type FinderSection = "projects" | "education" | "links";
 
 type FinderItem =
   | { id: string; title: string; subtitle?: string; kind: "app"; appId: string }
-  | { id: string; title: string; subtitle?: string; kind: "iframe" | "external"; url: string };
+  | { id: string; title: string; subtitle?: string; kind: "iframe" | "external"; url: string }
+  | { id: string; title: string; subtitle?: string; kind: "note"; slug: string };
 
 export function FinderApp() {
-  const { openApp, openUrl } = useLauncher();
+  const { openApp, openUrl, openNote } = useLauncher();
   const { getApp } = useAppRegistry();
 
   const [active, setActive] = useState<FinderSection>("projects");
@@ -30,23 +31,23 @@ export function FinderApp() {
           const title = p.title?.trim() || `Project ${idx + 1}`;
           const subtitle = p.subtitle ?? p.tech_stack ?? "Click to open";
 
-          // If the project has a live URL, open it in an iframe window
           if (p.live_url) {
             return { id: `api-${p.id}`, title, subtitle, kind: "iframe", url: p.live_url };
           }
 
-          // If the project has a repo URL, open in a new tab via external opener window
           if (p.repo_url) {
             return { id: `api-${p.id}`, title, subtitle, kind: "external", url: p.repo_url };
           }
 
-          // Otherwise try to map known projects to internal apps
           const normalized = title.toLowerCase();
           const appId =
-            normalized.includes("admin") ? "admin" :
-            normalized.includes("led") ? "led-builder" :
-            normalized.includes("resume") ? "resume" :
-            "about";
+            normalized.includes("admin")
+              ? "admin"
+              : normalized.includes("led")
+              ? "led-builder"
+              : normalized.includes("resume")
+              ? "resume"
+              : "about";
 
           return { id: `api-${p.id}`, title, subtitle, kind: "app", appId };
         });
@@ -105,34 +106,59 @@ export function FinderApp() {
     return {
       projects: projectItems.length ? projectItems : fallbackProjects,
       education: [
-        { id: "e1", title: "Harvard CS50", subtitle: "Currently enrolled — CS fundamentals", kind: "app", appId: "about" },
-        { id: "e2", title: "LEARN Academy (Frontend)", subtitle: "JS • React • HTML/CSS • Tailwind", kind: "app", appId: "about" },
-        { id: "e3", title: "Kean University — Accounting", subtitle: "B.S. Accounting", kind: "app", appId: "about" },
+        {
+          id: "e1",
+          title: "Harvard CS50",
+          subtitle: "Currently enrolled — CS fundamentals",
+          kind: "note",
+          slug: "edu-cs50",
+        },
+        {
+          id: "e2",
+          title: "LEARN Academy (Frontend)",
+          subtitle: "JS • React • HTML/CSS • Tailwind",
+          kind: "note",
+          slug: "edu-learn-academy",
+        },
+        {
+          id: "e3",
+          title: "Kean University — Accounting",
+          subtitle: "B.S. Accounting",
+          kind: "note",
+          slug: "edu-kean",
+        },
       ],
       links: [
         { id: "l1", title: "GitHub", subtitle: "github.com/e-dvni", kind: "app", appId: "github" },
-        { id: "l2", title: "LinkedIn", subtitle: "linkedin.com/in/daniel-lee-7157a31a8", kind: "app", appId: "linkedin" },
+        {
+          id: "l2",
+          title: "LinkedIn",
+          subtitle: "linkedin.com/in/daniel-lee-7157a31a8",
+          kind: "app",
+          appId: "linkedin",
+        },
         { id: "l3", title: "Contact (Mail)", subtitle: "Send me an email", kind: "app", appId: "mail" },
       ],
     };
   }, [getApp, projectItems]);
 
-  const title =
-    active === "projects" ? "Projects" : active === "education" ? "Education" : "Links";
-
+  const title = active === "projects" ? "Projects" : active === "education" ? "Education" : "Links";
   const list = itemsBySection[active];
 
   const handleOpen = (item: FinderItem) => {
     if (item.kind === "app") {
       openApp(item.appId);
-    } else {
-      openUrl({ title: item.title, url: item.url, kind: item.kind });
+      return;
     }
+    if (item.kind === "note") {
+      openNote({ title: item.title, slug: item.slug });
+      return;
+    }
+    openUrl({ title: item.title, url: item.url, kind: item.kind });
   };
 
   return (
     <div style={{ height: "100%", display: "grid", gridTemplateColumns: "220px 1fr" }}>
-      {/* Sidebar */}
       <div
         style={{
           borderRight: "1px solid rgba(255,255,255,0.10)",
@@ -174,13 +200,10 @@ export function FinderApp() {
         )}
       </div>
 
-      {/* Main */}
       <div style={{ padding: 14 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <h3 style={{ margin: 0 }}>{title}</h3>
-          <span style={{ color: "rgba(255,255,255,0.60)", fontSize: 12 }}>
-            {list.length} items
-          </span>
+          <span style={{ color: "rgba(255,255,255,0.60)", fontSize: 12 }}>{list.length} items</span>
         </div>
 
         <div
@@ -204,7 +227,7 @@ export function FinderApp() {
               }}
             >
               <div style={{ fontWeight: 700 }}>{item.title}</div>
-              {item.subtitle && (
+              {"subtitle" in item && item.subtitle && (
                 <div style={{ marginTop: 6, color: "rgba(255,255,255,0.65)", fontSize: 12 }}>
                   {item.subtitle}
                 </div>

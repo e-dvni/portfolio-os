@@ -14,7 +14,7 @@ import {
 type LoginResp = { token: string; email: string };
 type NoteResp = { title: string; body: string };
 
-type Tab = "about" | "projects";
+type Tab = "notes" | "projects";
 
 const STORAGE_KEY = "portfolio_admin_token";
 
@@ -31,10 +31,16 @@ const parseHighlights = (s: string): string[] =>
 
 const stringifyHighlights = (arr: string[]): string => arr.join(", ");
 
-/* ---------------- Component ---------------- */
+/** Notes you can edit in CMS */
+const NOTE_OPTIONS: { slug: string; label: string }[] = [
+  { slug: "about", label: "About Me" },
+  { slug: "edu-cs50", label: "Harvard CS50" },
+  { slug: "edu-learn-academy", label: "LEARN Academy (Frontend)" },
+  { slug: "edu-kean", label: "Kean University — Accounting" },
+];
 
 export function AdminCmsApp() {
-  const [tab, setTab] = useState<Tab>("about");
+  const [tab, setTab] = useState<Tab>("notes");
 
   // auth
   const [email, setEmail] = useState("danielslee078@gmail.com");
@@ -42,7 +48,10 @@ export function AdminCmsApp() {
   const [token, setToken] = useState<string>(() => localStorage.getItem(STORAGE_KEY) ?? "");
   const [status, setStatus] = useState("");
 
-  // about
+  const authed = token.length > 0;
+
+  // notes
+  const [noteSlug, setNoteSlug] = useState<string>("about");
   const [noteTitle, setNoteTitle] = useState("About Me");
   const [noteBody, setNoteBody] = useState("");
   const [loadingNote, setLoadingNote] = useState(false);
@@ -52,8 +61,6 @@ export function AdminCmsApp() {
   const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(false);
 
-  const authed = token.length > 0;
-
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeProjectId) ?? null,
     [projects, activeProjectId]
@@ -61,25 +68,27 @@ export function AdminCmsApp() {
 
   /* ---------------- Effects ---------------- */
 
-  // Load About note (public endpoint, but we only load after auth for simplicity)
+  // Load selected note (after auth)
   useEffect(() => {
     if (!authed) return;
+    if (tab !== "notes") return;
 
     let alive = true;
 
     (async () => {
       setLoadingNote(true);
       try {
-        const res = await fetch(`${API_BASE}/api/notes/about`);
+        const res = await fetch(`${API_BASE}/api/notes/${encodeURIComponent(noteSlug)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as NoteResp;
 
         if (!alive) return;
         setNoteTitle(data.title);
         setNoteBody(data.body);
+        setStatus("");
       } catch (err: unknown) {
         if (!alive) return;
-        setStatus(err instanceof Error ? err.message : "Failed to load About note.");
+        setStatus(err instanceof Error ? err.message : "Failed to load note.");
       } finally {
         if (alive) setLoadingNote(false);
       }
@@ -88,7 +97,7 @@ export function AdminCmsApp() {
     return () => {
       alive = false;
     };
-  }, [authed]);
+  }, [authed, tab, noteSlug]);
 
   // Load Projects when tab becomes active
   useEffect(() => {
@@ -104,6 +113,7 @@ export function AdminCmsApp() {
 
         setProjects(data);
         setActiveProjectId(data[0]?.id ?? null);
+        setStatus("");
       } catch (err: unknown) {
         if (!alive) return;
 
@@ -121,7 +131,6 @@ export function AdminCmsApp() {
     return () => {
       alive = false;
     };
-    // token included to refetch if token changes
   }, [authed, tab, token]);
 
   /* ---------------- Auth ---------------- */
@@ -131,7 +140,7 @@ export function AdminCmsApp() {
     setToken("");
     setProjects([]);
     setActiveProjectId(null);
-    setTab("about");
+    setTab("notes");
     setStatus(msg);
   };
 
@@ -160,13 +169,13 @@ export function AdminCmsApp() {
     }
   };
 
-  /* ---------------- About ---------------- */
+  /* ---------------- Notes ---------------- */
 
-  const saveAbout = async () => {
-    setStatus("Saving About…");
+  const saveNote = async () => {
+    setStatus(`Saving "${noteSlug}"…`);
     try {
-      await adminUpdateNote(token, "about", { title: noteTitle, body: noteBody });
-      setStatus("About saved ✅");
+      await adminUpdateNote(token, noteSlug, { title: noteTitle, body: noteBody });
+      setStatus("Note saved ✅");
     } catch (err: unknown) {
       if (apiErrorStatus(err) === 401) {
         doLogout("Session expired. Please log in again.");
@@ -251,7 +260,6 @@ export function AdminCmsApp() {
       await adminDeleteProject(token, activeProject.id);
       setProjects((prev) => prev.filter((p) => p.id !== activeProject.id));
 
-      // choose next active
       setActiveProjectId((prevId) => {
         const remaining = projects.filter((p) => p.id !== prevId);
         return remaining[0]?.id ?? null;
@@ -282,8 +290,8 @@ export function AdminCmsApp() {
       {/* Tabs */}
       {authed && (
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <TabButton active={tab === "about"} onClick={() => setTab("about")}>
-            About
+          <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>
+            Notes
           </TabButton>
           <TabButton active={tab === "projects"} onClick={() => setTab("projects")}>
             Projects
@@ -304,13 +312,15 @@ export function AdminCmsApp() {
           setPassword={setPassword}
           onLogin={login}
         />
-      ) : tab === "about" ? (
-        <AboutEditor
-          title={noteTitle}
-          body={noteBody}
-          setTitle={setNoteTitle}
-          setBody={setNoteBody}
-          onSave={saveAbout}
+      ) : tab === "notes" ? (
+        <NotesEditor
+          noteSlug={noteSlug}
+          setNoteSlug={setNoteSlug}
+          noteTitle={noteTitle}
+          setNoteTitle={setNoteTitle}
+          noteBody={noteBody}
+          setNoteBody={setNoteBody}
+          onSave={saveNote}
           loading={loadingNote}
         />
       ) : (
@@ -394,39 +404,57 @@ function LoginForm({
   );
 }
 
-function AboutEditor({
-  title,
-  body,
-  setTitle,
-  setBody,
+function NotesEditor({
+  noteSlug,
+  setNoteSlug,
+  noteTitle,
+  setNoteTitle,
+  noteBody,
+  setNoteBody,
   onSave,
   loading,
 }: {
-  title: string;
-  body: string;
-  setTitle: (v: string) => void;
-  setBody: (v: string) => void;
+  noteSlug: string;
+  setNoteSlug: (v: string) => void;
+  noteTitle: string;
+  setNoteTitle: (v: string) => void;
+  noteBody: string;
+  setNoteBody: (v: string) => void;
   onSave: () => void;
   loading: boolean;
 }) {
   return (
     <div style={{ marginTop: 14, display: "grid", gap: 10, maxWidth: 900 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>Edit About Note</div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>Edit Note</div>
         {loading && <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>Loading…</div>}
+        <div style={{ marginLeft: "auto", fontSize: 12, color: "rgba(255,255,255,0.6)" }}>
+          Slug:
+        </div>
+        <select
+          value={noteSlug}
+          onChange={(e) => setNoteSlug(e.target.value)}
+          style={{ ...inputStyle, width: 260, padding: "8px 10px" }}
+        >
+          {NOTE_OPTIONS.map((o) => (
+            <option key={o.slug} value={o.slug}>
+              {o.label}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} />
+      <input value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} style={inputStyle} />
 
       <textarea
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        style={{ ...inputStyle, minHeight: 240, resize: "vertical" }}
+        value={noteBody}
+        onChange={(e) => setNoteBody(e.target.value)}
+        style={{ ...inputStyle, minHeight: 260, resize: "vertical" }}
       />
 
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={onSave} style={btnStyle}>
-          Save About
+          Save Note
         </button>
       </div>
     </div>
@@ -511,19 +539,17 @@ function ProjectsEditor({
       {/* Right editor */}
       <div
         style={{
-            border: "1px solid rgba(255,255,255,0.10)",
-            borderRadius: 14,
-            padding: 12,
-            background: "rgba(0,0,0,0.18)",
-            minHeight: 420,
-            overflow: "auto",
-            maxHeight: "100%",
+          border: "1px solid rgba(255,255,255,0.10)",
+          borderRadius: 14,
+          padding: 12,
+          background: "rgba(0,0,0,0.18)",
+          minHeight: 420,
+          overflow: "auto",
+          maxHeight: "100%",
         }}
       >
         {!activeProject ? (
-          <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
-            Select a project to edit
-          </div>
+          <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Select a project to edit</div>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gap: 6 }}>

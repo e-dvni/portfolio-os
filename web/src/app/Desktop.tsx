@@ -16,8 +16,7 @@ const isTypingTarget = (t: EventTarget | null): boolean => {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable;
 };
 
-// Must match your CSS variables / dock styling
-const DOCK_SPACE_PX = 78 + 14; // dock height + gap (adjust if you change CSS)
+const DOCK_SPACE_PX = 78 + 14;
 
 export function Desktop() {
   const wm = useWindowStore();
@@ -33,7 +32,6 @@ export function Desktop() {
 
   const desktopRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ Measure desktop work area (menu bar already excluded by .desktop inset)
   useLayoutEffect(() => {
     const el = desktopRef.current;
     if (!el) return;
@@ -51,7 +49,6 @@ export function Desktop() {
     return () => window.removeEventListener("resize", compute);
   }, [wm]);
 
-  // Load apps from Rails API (fallback if down)
   useEffect(() => {
     let alive = true;
 
@@ -79,15 +76,19 @@ export function Desktop() {
   const desktopApps = useMemo(() => apps.filter((a) => a.desktop), [apps]);
   const dockApps = useMemo(() => apps.filter((a) => a.dock), [apps]);
 
+  const closeOverlays = () => {
+    setSpotlightOpen(false);
+    setQuery("");
+    setMenu(null);
+  };
+
   const openApp = useCallback(
     (id: string) => {
       const app = apps.find((a) => a.id === id);
       if (!app) return;
 
       wm.open(app);
-      setSpotlightOpen(false);
-      setQuery("");
-      setMenu(null);
+      closeOverlays();
     },
     [apps, wm]
   );
@@ -95,9 +96,15 @@ export function Desktop() {
   const openUrl = useCallback(
     (args: { title: string; url: string; kind: "iframe" | "external" }) => {
       wm.openUrl(args);
-      setSpotlightOpen(false);
-      setQuery("");
-      setMenu(null);
+      closeOverlays();
+    },
+    [wm]
+  );
+
+  const openNote = useCallback(
+    (args: { title: string; slug: string }) => {
+      wm.openNote(args);
+      closeOverlays();
     },
     [wm]
   );
@@ -114,7 +121,6 @@ export function Desktop() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // ✅ Don’t hijack keys while typing (fixes “can’t type spaces”)
       if (isTypingTarget(e.target)) return;
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -150,7 +156,7 @@ export function Desktop() {
 
   return (
     <AppRegistryProvider apps={apps}>
-      <LauncherProvider openApp={openApp} openUrl={openUrl}>
+      <LauncherProvider openApp={openApp} openUrl={openUrl} openNote={openNote}>
         <div className="mac-root">
           <div className="wallpaper" />
 
@@ -206,7 +212,6 @@ export function Desktop() {
               onResize={wm.resize}
             />
 
-            {/* Dock */}
             <div className="dock">
               <div className="dock-left">
                 {dockApps.map((app) => (

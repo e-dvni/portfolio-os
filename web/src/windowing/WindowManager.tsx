@@ -12,10 +12,11 @@ import { MailApp } from "../apps/MailApp";
 import { AdminDashboardApp } from "../apps/AdminDashboardApp";
 import { AdminCmsApp } from "../apps/AdminCmsApp";
 
-function InternalApp({ internalKey }: { internalKey?: string }) {
+function InternalApp({ internalKey, appId }: { internalKey?: string; appId: string }) {
   switch (internalKey) {
     case "notes":
-      return <NotesApp />;
+      // For internal notes apps, we treat appId as the note slug (e.g. "about")
+      return <NotesApp slug={appId} />;
     case "finder":
       return <FinderApp />;
     case "terminal":
@@ -64,11 +65,28 @@ export function WindowManager(props: {
                 onMove={(x, y) => onMove(win.winId, x, y)}
                 onResize={(w, h) => onResize(win.winId, w, h)}
               >
-                {kind === "external" ? (
-                  <ExternalOpener url={url} />
-                ) : (
-                  <IframeApp src={url} />
-                )}
+                {kind === "external" ? <ExternalOpener url={url} /> : <IframeApp src={url} />}
+              </WindowFrame>
+            );
+          }
+
+          // dynamic note window?
+          if (win.appId.startsWith("__note__:")) {
+            const [, encoded] = win.appId.split(":");
+            const slug = decodeURIComponent(encoded ?? "");
+
+            return (
+              <WindowFrame
+                key={win.winId}
+                win={win}
+                onClose={() => onClose(win.winId)}
+                onMinimize={() => onMinimize(win.winId)}
+                onToggleMaximize={() => onToggleMaximize(win.winId)}
+                onFocus={() => onFocus(win.winId)}
+                onMove={(x, y) => onMove(win.winId, x, y)}
+                onResize={(w, h) => onResize(win.winId, w, h)}
+              >
+                <NotesApp slug={slug} />
               </WindowFrame>
             );
           }
@@ -95,7 +113,7 @@ export function WindowManager(props: {
               ) : app.type === "external" ? (
                 <ExternalOpener url={app.url!} />
               ) : (
-                <InternalApp internalKey={app.internalKey} />
+                <InternalApp internalKey={app.internalKey} appId={app.id} />
               )}
             </WindowFrame>
           );

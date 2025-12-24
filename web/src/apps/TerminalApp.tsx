@@ -3,7 +3,8 @@ import { fetchProjects, type ProjectDTO } from "../data/api";
 
 type TermLine = { kind: "out" | "err" | "cmd"; text: string };
 
-const mono = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New"';
+const mono =
+  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New"';
 
 function nowTime() {
   try {
@@ -31,12 +32,6 @@ function normalize(s: string) {
   return s.trim().toLowerCase();
 }
 
-/**
- * Simple shell-like tokenizer with support for quoted args.
- * Examples:
- *  open 2
- *  open "Custom LED Builder"
- */
 function tokenize(input: string): string[] {
   const out: string[] = [];
   let cur = "";
@@ -73,37 +68,20 @@ export function TerminalApp() {
   ]);
 
   const [history, setHistory] = useState<string[]>([]);
-  const [histIdx, setHistIdx] = useState<number>(-1);
 
   const [projects, setProjects] = useState<ProjectDTO[] | null>(null);
-  const [projectsLoadedAt, setProjectsLoadedAt] = useState<number | null>(null);
 
-  // Autocomplete sources
   const commandNames = useMemo(
-    () => [
-      "help",
-      "clear",
-      "whoami",
-      "skills",
-      "projects",
-      "open",
-      "contact",
-      "github",
-      "linkedin",
-      "email",
-      "time",
-    ],
+    () => ["help", "clear", "whoami", "skills", "projects", "open", "contact", "github", "linkedin", "email", "time"],
     []
   );
 
-  // keep the output scrolled to bottom
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [lines]);
 
-  // Focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -113,19 +91,17 @@ export function TerminalApp() {
   };
 
   const ensureProjects = async (): Promise<ProjectDTO[] | null> => {
-    if (projects && projects.length >= 0) return projects;
+    if (projects) return projects;
 
     push({ kind: "out", text: "Fetching projects from API…" });
     try {
       const data = await fetchProjects();
       setProjects(data);
-      setProjectsLoadedAt(Date.now());
       push({ kind: "out", text: `Loaded ${data.length} project(s).` });
       return data;
-    } catch (e) {
+    } catch {
       push({ kind: "err", text: "Failed to load projects (API unavailable). Try again later." });
       setProjects([]);
-      setProjectsLoadedAt(Date.now());
       return [];
     }
   };
@@ -139,7 +115,7 @@ export function TerminalApp() {
       whoami: ["whoami", "Print a short profile summary."],
       skills: ["skills", "Show a quick skill matrix."],
       projects: ["projects", "List projects loaded from the Rails API."],
-      open: ['open <#|name> [repo|live]', 'Examples: open 1', 'open "Custom LED Builder" live'],
+      open: ['open <#|name> [repo|live]', "Examples: open 1", 'open "Custom LED Builder" live'],
       contact: ["contact", "Show contact shortcuts."],
       github: ["github", "Open GitHub in a new tab."],
       linkedin: ["linkedin", "Open LinkedIn in a new tab."],
@@ -193,16 +169,17 @@ export function TerminalApp() {
       return;
     }
 
-    // Sort by order_index if present
     const sorted = data.slice().sort((a, b) => (a.order_index ?? 999) - (b.order_index ?? 999));
 
-    // Pretty “table”
     const idxW = 3;
     const titleW = 28;
     const stackW = 22;
 
     push({ kind: "out", text: "" });
-    push({ kind: "out", text: `${padRight("#", idxW)}  ${padRight("Title", titleW)}  ${padRight("Stack", stackW)}  Links` });
+    push({
+      kind: "out",
+      text: `${padRight("#", idxW)}  ${padRight("Title", titleW)}  ${padRight("Stack", stackW)}  Links`,
+    });
     push({ kind: "out", text: `${"-".repeat(idxW)}  ${"-".repeat(titleW)}  ${"-".repeat(stackW)}  -----` });
 
     sorted.forEach((p, i) => {
@@ -210,16 +187,11 @@ export function TerminalApp() {
       const title = ellip(p.title ?? "Untitled", titleW);
       const stack = ellip(p.tech_stack ?? "—", stackW);
       const links = `${p.repo_url ? "repo" : "—"} / ${p.live_url ? "live" : "—"}`;
-
       push({ kind: "out", text: `${padRight(n, idxW)}  ${padRight(title, titleW)}  ${padRight(stack, stackW)}  ${links}` });
     });
 
     push({ kind: "out", text: "" });
-    push({ kind: "out", text: 'Use `open <#>` to open a project. Example: `open 1 live`' });
-
-    if (projectsLoadedAt) {
-      // no-op, but keeps lint happy if you later use it
-    }
+    push({ kind: "out", text: "Use `open <#>` to open a project. Example: `open 1 live`" });
   };
 
   const openProject = async (target: string, which?: string) => {
@@ -230,7 +202,6 @@ export function TerminalApp() {
 
     let proj: ProjectDTO | null = null;
 
-    // number?
     const n = Number(target);
     if (!Number.isNaN(n) && Number.isFinite(n)) {
       const idx = clamp(Math.floor(n) - 1, 0, sorted.length - 1);
@@ -253,26 +224,19 @@ export function TerminalApp() {
     const live = proj.live_url ?? "";
 
     if (mode === "repo") {
-      if (!repo) {
-        push({ kind: "err", text: "That project has no repo URL." });
-        return;
-      }
+      if (!repo) return push({ kind: "err", text: "That project has no repo URL." });
       window.open(repo, "_blank", "noopener,noreferrer");
       push({ kind: "out", text: `Opened repo: ${proj.title}` });
       return;
     }
 
     if (mode === "live") {
-      if (!live) {
-        push({ kind: "err", text: "That project has no live URL." });
-        return;
-      }
+      if (!live) return push({ kind: "err", text: "That project has no live URL." });
       window.open(live, "_blank", "noopener,noreferrer");
       push({ kind: "out", text: `Opened live: ${proj.title}` });
       return;
     }
 
-    // Default behavior: prefer live, then repo
     if (live) {
       window.open(live, "_blank", "noopener,noreferrer");
       push({ kind: "out", text: `Opened live: ${proj.title}` });
@@ -300,9 +264,7 @@ export function TerminalApp() {
     const trimmed = raw.trim();
     if (!trimmed) return;
 
-    // record history
     setHistory((h) => [...h, trimmed]);
-    setHistIdx(-1);
 
     push({ kind: "cmd", text: `> ${trimmed}` });
 
@@ -323,10 +285,7 @@ export function TerminalApp() {
     if (cmd === "projects") return printProjects();
 
     if (cmd === "open") {
-      if (!a1) {
-        push({ kind: "err", text: 'Usage: open <#|name> [repo|live]' });
-        return;
-      }
+      if (!a1) return push({ kind: "err", text: "Usage: open <#|name> [repo|live]" });
       return openProject(a1, a2);
     }
 
@@ -360,19 +319,14 @@ export function TerminalApp() {
     const raw = el.value;
     const parts = tokenize(raw);
 
-    // no command yet — autocomplete commands
     if (parts.length <= 1 && !raw.includes(" ")) {
       const prefix = normalize(raw);
       const matches = commandNames.filter((c) => c.startsWith(prefix));
-      if (matches.length === 1) {
-        el.value = matches[0] + " ";
-      } else if (matches.length > 1) {
-        push({ kind: "out", text: matches.join("   ") });
-      }
+      if (matches.length === 1) el.value = matches[0] + " ";
+      else if (matches.length > 1) push({ kind: "out", text: matches.join("   ") });
       return;
     }
 
-    // autocomplete for `open <target>`
     const cmd = normalize(parts[0] ?? "");
     if (cmd === "open") {
       const targetPrefix = parts[1] ?? "";
@@ -381,25 +335,16 @@ export function TerminalApp() {
 
       const sorted = data.slice().sort((a, b) => (a.order_index ?? 999) - (b.order_index ?? 999));
 
-      const candidates = sorted.map((p, i) => ({
-        num: String(i + 1),
-        title: p.title ?? "",
-      }));
-
+      const candidates = sorted.map((p, i) => ({ num: String(i + 1), title: p.title ?? "" }));
       const pref = normalize(targetPrefix);
 
-      const matches = candidates.filter(
-        (c) => c.num.startsWith(pref) || normalize(c.title).startsWith(pref)
-      );
+      const matches = candidates.filter((c) => c.num.startsWith(pref) || normalize(c.title).startsWith(pref));
 
       if (matches.length === 1) {
-        // keep existing spacing, just replace the target token
-        const next = `${parts[0]} "${matches[0].title}" `;
-        el.value = next;
+        el.value = `${parts[0]} "${matches[0].title}" `;
       } else if (matches.length > 1) {
         push({ kind: "out", text: matches.slice(0, 8).map((m) => `${m.num}:${m.title}`).join("   ") });
       }
-      return;
     }
   };
 
@@ -413,43 +358,13 @@ export function TerminalApp() {
       return;
     }
 
-    // history navigation
     if (e.key === "ArrowUp") {
       e.preventDefault();
       if (history.length === 0) return;
-
-      setHistIdx((idx) => {
-        const next = idx === -1 ? history.length - 1 : Math.max(0, idx - 1);
-        el.value = history[next] ?? "";
-        // move caret to end
-        requestAnimationFrame(() => {
-          el.selectionStart = el.value.length;
-          el.selectionEnd = el.value.length;
-        });
-        return next;
-      });
-      return;
-    }
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (history.length === 0) return;
-
-      setHistIdx((idx) => {
-        if (idx === -1) return -1;
-
-        const next = Math.min(history.length - 1, idx + 1);
-        if (next === history.length - 1) {
-          // if already at end, next ArrowDown clears
-          el.value = "";
-          return -1;
-        }
-        el.value = history[next] ?? "";
-        requestAnimationFrame(() => {
-          el.selectionStart = el.value.length;
-          el.selectionEnd = el.value.length;
-        });
-        return next;
+      el.value = history[history.length - 1] ?? "";
+      requestAnimationFrame(() => {
+        el.selectionStart = el.value.length;
+        el.selectionEnd = el.value.length;
       });
       return;
     }
@@ -457,7 +372,6 @@ export function TerminalApp() {
     if (e.key === "Tab") {
       e.preventDefault();
       void tryAutocomplete();
-      return;
     }
   };
 

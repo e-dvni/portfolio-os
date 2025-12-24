@@ -107,13 +107,38 @@ export function useWindowStore() {
     [nextZ]
   );
 
+  const openNote = useCallback(
+    (args: { title: string; slug: string }) => {
+      const z = nextZ();
+      const winId = `note-${Date.now()}`;
+
+      const x = 90 + Math.floor(Math.random() * 60);
+      const y = 80 + Math.floor(Math.random() * 40);
+
+      setWins((prev) => [
+        ...prev,
+        {
+          winId,
+          appId: `__note__:${encodeURIComponent(args.slug)}`,
+          title: `Notes — ${args.title}`,
+          x,
+          y,
+          w: 720,
+          h: 520,
+          z,
+          minimized: false,
+          maximized: false,
+        },
+      ]);
+    },
+    [nextZ]
+  );
+
   const move = useCallback((winId: string, x: number, y: number) => {
     setWins((prev) =>
       prev.map((w) => {
         if (w.winId !== winId) return w;
         if (w.maximized) return w;
-
-        // keep within some sane bounds (desktop origin is 0,0 inside .desktop)
         return { ...w, x: clamp(x, -2000, 2000), y: clamp(y, 0, 2000) };
       })
     );
@@ -191,6 +216,7 @@ export function useWindowStore() {
     setWorkArea,
     open,
     openUrl,
+    openNote,
     close,
     closeAll,
     focus,

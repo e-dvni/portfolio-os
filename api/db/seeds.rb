@@ -193,6 +193,52 @@ upsert_note!(
   TEXT
 )
 
+upsert_note!(
+  slug: "edu-cs50",
+  title: "Harvard CS50",
+  body: <<~TEXT
+    Currently enrolled in Harvard’s CS50 to strengthen my computer science foundations.
+
+    Focus areas:
+    • Problem solving and algorithms
+    • C and memory fundamentals
+    • Python basics
+    • Web programming concepts
+
+    Goal: build stronger fundamentals while continuing to ship real products.
+  TEXT
+)
+
+upsert_note!(
+  slug: "edu-learn-academy",
+  title: "LEARN Academy (Frontend)",
+  body: <<~TEXT
+    Frontend-focused learning and practice, building real UI features and small apps.
+
+    Skills:
+    • JavaScript fundamentals
+    • React (components, state, hooks)
+    • HTML/CSS + modern UI patterns
+    • Tailwind styling workflows
+
+    Goal: become fast and reliable building user-facing products.
+  TEXT
+)
+
+upsert_note!(
+  slug: "edu-kean",
+  title: "Kean University — Accounting",
+  body: <<~TEXT
+    B.S. Accounting
+
+    Strengths I bring from accounting:
+    • Attention to detail and accuracy
+    • Working with constraints and deadlines
+    • Clear communication and documentation
+    • Comfort with systems, numbers, and optimization
+  TEXT
+)
+
 puts "✅ Notes seeded: #{Note.count}"
 
 # ---------- Projects ----------
@@ -241,4 +287,3 @@ if admin_email.present? && admin_password.present?
 else
   puts "⚠️ ADMIN_EMAIL / ADMIN_PASSWORD not set — skipping admin user seed."
 end
-

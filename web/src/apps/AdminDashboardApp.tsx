@@ -60,8 +60,6 @@ const smallMuted: React.CSSProperties = {
   color: "rgba(255,255,255,0.60)",
 };
 
-const h2: React.CSSProperties = { margin: 0, fontSize: 16 };
-
 function formatDate(d: string) {
   try {
     return new Date(d).toLocaleDateString();
@@ -164,7 +162,7 @@ export function AdminDashboardApp() {
 
         setProjects(data);
         setSelectedProjectId(data[0]?.id ?? null);
-      } catch (e) {
+      } catch {
         if (!alive) return;
         setProjects([]);
         setSelectedProjectId(null);
@@ -191,15 +189,15 @@ export function AdminDashboardApp() {
     const hasRepo = projects.filter((p) => (p.repo_url ?? "").trim().length > 0).length;
 
     const inboxNew = inbox.filter((i) => i.status === "new").length;
-    const scheduled = schedule.filter((s) => s.status === "scheduled").length;
+    const scheduledCount = schedule.filter((s) => s.status === "scheduled").length;
 
     return [
       { label: "Projects", value: String(totalProjects), sub: `${hasLive} live • ${hasRepo} repo` },
       { label: "Inbox (New)", value: String(inboxNew), sub: "Contact requests" },
-      { label: "Scheduled", value: String(scheduled), sub: "Upcoming installs" },
+      { label: "Scheduled", value: String(scheduledCount), sub: "Upcoming installs" },
       { label: "Users", value: String(users.length), sub: "Team access" },
     ];
-  }, [projects.length, inbox, schedule, users.length, projects]);
+  }, [projects, inbox, schedule, users.length]);
 
   return (
     <div
@@ -336,11 +334,9 @@ function OverviewPanel({ metrics }: { metrics: { label: string; value: string; s
           <li>Navigate dashboard tabs like a real internal tool</li>
           <li>View live “Projects” data from my Rails API</li>
           <li>See realistic “Schedule / Inbox / Users”</li>
-          <li>This is a demo mockup of Sign Avenue's Admin Dashboard</li>
+          <li>This is a demo mockup of Sign Avenue&apos;s Admin Dashboard</li>
         </ul>
-        <div style={smallMuted}>
-          
-        </div>
+        <div style={smallMuted}></div>
       </div>
     </div>
   );
@@ -351,7 +347,7 @@ function ProjectsPanel(props: {
   loading: boolean;
   error: string;
   selectedId: number | null;
-  onSelect: (id: number) => void;
+  onSelect: (id: number | null) => void;
   selected: ProjectDTO | null;
 }) {
   const { projects, loading, error, selectedId, onSelect, selected } = props;
@@ -360,9 +356,7 @@ function ProjectsPanel(props: {
     <div style={{ display: "grid", gap: 12, minHeight: 0 }}>
       <div style={{ ...cardStyle, display: "flex", alignItems: "baseline", gap: 10 }}>
         <h3 style={{ margin: 0 }}>Projects</h3>
-        <span style={smallMuted}>
-          {loading ? "Loading…" : `${projects.length} total`}
-        </span>
+        <span style={smallMuted}>{loading ? "Loading…" : `${projects.length} total`}</span>
         {error && <span style={{ ...smallMuted, color: "rgba(255,180,180,0.85)" }}>{error}</span>}
       </div>
 
@@ -430,29 +424,21 @@ function ProjectsPanel(props: {
                 )}
               </div>
 
-              {selected.subtitle && (
-                <div style={{ color: "rgba(255,255,255,0.80)" }}>{selected.subtitle}</div>
-              )}
+              {selected.subtitle && <div style={{ color: "rgba(255,255,255,0.80)" }}>{selected.subtitle}</div>}
 
               {selected.summary && (
-                <div style={{ color: "rgba(255,255,255,0.72)", lineHeight: 1.45 }}>
-                  {selected.summary}
-                </div>
+                <div style={{ color: "rgba(255,255,255,0.72)", lineHeight: 1.45 }}>{selected.summary}</div>
               )}
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div style={cardStyle}>
                   <div style={smallMuted}>Tech Stack</div>
-                  <div style={{ marginTop: 6, fontWeight: 800 }}>
-                    {selected.tech_stack ?? "—"}
-                  </div>
+                  <div style={{ marginTop: 6, fontWeight: 800 }}>{selected.tech_stack ?? "—"}</div>
                 </div>
 
                 <div style={cardStyle}>
                   <div style={smallMuted}>Order Index</div>
-                  <div style={{ marginTop: 6, fontWeight: 800 }}>
-                    {selected.order_index ?? "—"}
-                  </div>
+                  <div style={{ marginTop: 6, fontWeight: 800 }}>{selected.order_index ?? "—"}</div>
                 </div>
               </div>
 
@@ -498,9 +484,7 @@ function ProjectsPanel(props: {
                 </div>
               </div>
 
-              <div style={smallMuted}>
-                
-              </div>
+              <div style={smallMuted}></div>
             </div>
           )}
         </div>
@@ -586,9 +570,7 @@ function InboxPanel({ items }: { items: InboxItem[] }) {
               <div style={{ marginLeft: "auto", ...smallMuted }}>{formatDate(i.createdAt)}</div>
             </div>
             <div style={{ marginTop: 6, ...smallMuted }}>{i.email}</div>
-            <div style={{ marginTop: 10, color: "rgba(255,255,255,0.82)", lineHeight: 1.45 }}>
-              {i.message}
-            </div>
+            <div style={{ marginTop: 10, color: "rgba(255,255,255,0.82)", lineHeight: 1.45 }}>{i.message}</div>
           </div>
         ))}
       </div>
