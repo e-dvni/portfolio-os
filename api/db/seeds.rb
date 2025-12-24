@@ -35,7 +35,7 @@ end
 
 apps = [
   {
-    name: "Resume.pdf",
+    name: "Resume",
     slug: "resume",
     icon: "/icons/resume.png",
     app_type: "pdf",
@@ -76,19 +76,21 @@ apps = [
     launch_url: nil,
     internal_key: "admin"
   },
+
+  # ✅ Desktop icon now opens NotesHub (broad Notes app)
   {
-    name: "About Me",
-    slug: "about",
+    name: "Notes",
+    slug: "notes",
     icon: "/icons/aboutMe.png",
     app_type: "internal",
-    window_title: "Notes — About Me",
-    default_w: 720,
-    default_h: 520,
+    window_title: "Notes",
+    default_w: 900,
+    default_h: 600,
     desktop: true,
     dock: false,
     order_index: 4,
     launch_url: nil,
-    internal_key: "notes"
+    internal_key: "notes-hub"
   },
   {
     name: "Finder",

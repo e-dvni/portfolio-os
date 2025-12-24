@@ -1,6 +1,6 @@
 import type { ApiApp } from "./adapters";
 
-export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:3000";
+export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
 /** ---------- Shared Types ---------- */
 
@@ -11,6 +11,17 @@ export type ApiError = {
 };
 
 export type NoteDTO = {
+  title: string;
+  body: string;
+};
+
+export type NoteSummaryDTO = {
+  slug: string;
+  title: string;
+};
+
+export type AdminNoteDTO = {
+  slug: string;
   title: string;
   body: string;
 };
@@ -90,6 +101,11 @@ export async function fetchApps(): Promise<ApiApp[]> {
   return safeJson<ApiApp[]>(res);
 }
 
+export async function fetchNotes(): Promise<NoteSummaryDTO[]> {
+  const res = await fetch(`${API_BASE}/api/notes`);
+  return safeJson<NoteSummaryDTO[]>(res);
+}
+
 export async function fetchNote(slug: string): Promise<NoteDTO> {
   const res = await fetch(`${API_BASE}/api/notes/${encodeURIComponent(slug)}`);
   return safeJson<NoteDTO>(res);
@@ -131,6 +147,30 @@ export async function adminLogout(token: string): Promise<{ ok: true } | { ok: b
 
 /** ---------- Admin Notes ---------- */
 
+export async function adminFetchNotes(token: string): Promise<AdminNoteDTO[]> {
+  const res = await fetch(`${API_BASE}/api/admin/notes`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  return safeJson<AdminNoteDTO[]>(res);
+}
+
+export async function adminCreateNote(
+  token: string,
+  note: { slug: string; title: string; body: string }
+): Promise<AdminNoteDTO> {
+  const res = await fetch(`${API_BASE}/api/admin/notes`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ note }),
+  });
+
+  return safeJson<AdminNoteDTO>(res);
+}
+
 export async function adminUpdateNote(
   token: string,
   slug: string,
@@ -146,6 +186,15 @@ export async function adminUpdateNote(
   });
 
   return safeJson<NoteDTO>(res);
+}
+
+export async function adminDeleteNote(token: string, slug: string): Promise<{ ok: true }> {
+  const res = await fetch(`${API_BASE}/api/admin/notes/${encodeURIComponent(slug)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  return safeJson<{ ok: true }>(res);
 }
 
 /** ---------- Admin Projects CRUD ---------- */

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { WindowManager } from "../windowing/WindowManager";
 import { useWindowStore } from "../windowing/useWindowStore";
 import { LauncherProvider } from "./LauncherProvider";
@@ -18,6 +18,8 @@ const isTypingTarget = (t: EventTarget | null): boolean => {
 
 const DOCK_SPACE_PX = 78 + 14;
 
+type MenuState = { x: number; y: number; items: ContextMenuItem[] } | null;
+
 export function Desktop() {
   const wm = useWindowStore();
 
@@ -27,7 +29,7 @@ export function Desktop() {
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [query, setQuery] = useState("");
 
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<MenuState>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
 
   const desktopRef = useRef<HTMLDivElement | null>(null);
@@ -76,37 +78,55 @@ export function Desktop() {
   const desktopApps = useMemo(() => apps.filter((a) => a.desktop), [apps]);
   const dockApps = useMemo(() => apps.filter((a) => a.dock), [apps]);
 
-  const closeOverlays = () => {
+  const closeOverlays = useCallback(() => {
     setSpotlightOpen(false);
     setQuery("");
     setMenu(null);
-  };
+  }, []);
 
+  /**
+   * Launcher callbacks:
+   * - default behavior: de-dupe (reuse existing window)
+   * - opts.newWindow: force a brand new window
+   */
   const openApp = useCallback(
-    (id: string) => {
+    (id: string, opts?: { newWindow?: boolean }) => {
       const app = apps.find((a) => a.id === id);
       if (!app) return;
 
-      wm.open(app);
+      if (id === "notes") {
+        wm.openNotesHub({}, opts);
+      } else {
+        wm.open(app, opts);
+      }
+
       closeOverlays();
     },
-    [apps, wm]
+    [apps, wm, closeOverlays]
   );
 
   const openUrl = useCallback(
-    (args: { title: string; url: string; kind: "iframe" | "external" }) => {
-      wm.openUrl(args);
+    (
+      args: { title: string; url: string; kind: "iframe" | "external" },
+      opts?: { newWindow?: boolean }
+    ) => {
+      wm.openUrl(args, opts);
       closeOverlays();
     },
-    [wm]
+    [wm, closeOverlays]
   );
 
   const openNote = useCallback(
-    (args: { title: string; slug: string }) => {
-      wm.openNote(args);
+    (args: { title: string; slug: string }, opts?: { newWindow?: boolean }) => {
+      wm.openNotesHub({ slug: args.slug }, opts);
       closeOverlays();
     },
-    [wm]
+    [wm, closeOverlays]
+  );
+
+  const openAppNew = useCallback(
+    (id: string) => openApp(id, { newWindow: true }),
+    [openApp]
   );
 
   const minimizedWins = useMemo(() => wm.wins.filter((w) => w.minimized), [wm.wins]);
@@ -142,7 +162,7 @@ export function Desktop() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const contextItems: ContextMenuItem[] = useMemo(
+  const desktopBackgroundMenu: ContextMenuItem[] = useMemo(
     () => [
       { kind: "item", label: "Open Finder", onClick: () => openApp("finder") },
       { kind: "item", label: "Open Spotlight", onClick: () => setSpotlightOpen(true) },
@@ -152,6 +172,22 @@ export function Desktop() {
       { kind: "item", label: "About This Mac", onClick: () => setAboutOpen(true) },
     ],
     [openApp, wm]
+  );
+
+  const showAppMenu = useCallback(
+    (e: React.MouseEvent, app: AppDef) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setSpotlightOpen(false);
+
+      const items: ContextMenuItem[] = [
+        { kind: "item", label: "Open", onClick: () => openApp(app.id) },
+        { kind: "item", label: "Open New Window", onClick: () => openAppNew(app.id) },
+      ];
+
+      setMenu({ x: e.clientX, y: e.clientY, items });
+    },
+    [openApp, openAppNew]
   );
 
   return (
@@ -182,7 +218,7 @@ export function Desktop() {
             onContextMenu={(e) => {
               e.preventDefault();
               setSpotlightOpen(false);
-              setMenu({ x: e.clientX, y: e.clientY });
+              setMenu({ x: e.clientX, y: e.clientY, items: desktopBackgroundMenu });
             }}
             onMouseDown={() => {
               if (menu) setMenu(null);
@@ -194,6 +230,7 @@ export function Desktop() {
                   key={app.id}
                   className="icon"
                   onDoubleClick={() => openApp(app.id)}
+                  onContextMenu={(e) => showAppMenu(e, app)}
                   title="Double click to open"
                 >
                   <img src={app.icon} alt={app.name} />
@@ -219,6 +256,7 @@ export function Desktop() {
                     key={app.id}
                     className="dock-item"
                     onClick={() => openApp(app.id)}
+                    onContextMenu={(e) => showAppMenu(e, app)}
                     title={app.name}
                   >
                     <img src={app.icon} alt={app.name} />
@@ -251,7 +289,11 @@ export function Desktop() {
                 />
                 <div className="spotlight-results">
                   {(results.length ? results : apps.slice(0, 8)).map((app) => (
-                    <div key={app.id} className="spotlight-item" onClick={() => openApp(app.id)}>
+                    <div
+                      key={app.id}
+                      className="spotlight-item"
+                      onClick={() => openApp(app.id)}
+                    >
                       <img src={app.icon} alt="" style={{ width: 18, height: 18 }} />
                       <div>
                         <div style={{ fontWeight: 600 }}>{app.name}</div>
@@ -264,7 +306,12 @@ export function Desktop() {
             )}
 
             {menu && (
-              <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} items={contextItems} />
+              <ContextMenu
+                x={menu.x}
+                y={menu.y}
+                onClose={() => setMenu(null)}
+                items={menu.items}
+              />
             )}
 
             {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}

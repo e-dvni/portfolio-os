@@ -5,18 +5,29 @@ import { useAppRegistry } from "../app/appRegistryContext";
 
 import { PdfViewerApp } from "../apps/PdfViewerApp";
 import { IframeApp } from "../apps/IframeApp";
-import { NotesApp } from "../apps/NotesApp";
+import { NotesHubApp } from "../apps/NotesHubApp";
 import { FinderApp } from "../apps/FinderApp";
 import { TerminalApp } from "../apps/TerminalApp";
 import { MailApp } from "../apps/MailApp";
 import { AdminDashboardApp } from "../apps/AdminDashboardApp";
 import { AdminCmsApp } from "../apps/AdminCmsApp";
 
-function InternalApp({ internalKey, appId }: { internalKey?: string; appId: string }) {
+function InternalApp({
+  internalKey,
+  win,
+}: {
+  internalKey?: string;
+  win?: WindowState;
+}) {
+  // NotesHub needs initialSlug support via win.params.initialSlug
+  if (internalKey === "notes-hub") {
+    const initialSlug =
+      typeof win?.params?.initialSlug === "string" ? win.params.initialSlug : undefined;
+
+    return <NotesHubApp initialSlug={initialSlug} />;
+  }
+
   switch (internalKey) {
-    case "notes":
-      // For internal notes apps, we treat appId as the note slug (e.g. "about")
-      return <NotesApp slug={appId} />;
     case "finder":
       return <FinderApp />;
     case "terminal":
@@ -70,8 +81,31 @@ export function WindowManager(props: {
             );
           }
 
-          // dynamic note window?
-          if (win.appId.startsWith("__note__:")) {
+          // ✅ NEW Notes window: appId === "notes" and slug passed in win.params.initialSlug
+          // This is what your updated useWindowStore opens.
+          if (win.appId === "notes") {
+            const initialSlug =
+              typeof win.params?.initialSlug === "string" ? win.params.initialSlug : undefined;
+
+            return (
+              <WindowFrame
+                key={win.winId}
+                win={win}
+                onClose={() => onClose(win.winId)}
+                onMinimize={() => onMinimize(win.winId)}
+                onToggleMaximize={() => onToggleMaximize(win.winId)}
+                onFocus={() => onFocus(win.winId)}
+                onMove={(x, y) => onMove(win.winId, x, y)}
+                onResize={(w, h) => onResize(win.winId, w, h)}
+              >
+                <NotesHubApp initialSlug={initialSlug} />
+              </WindowFrame>
+            );
+          }
+
+          // ✅ LEGACY NotesHub window: __notes_hub__:<slug?>
+          // (Safe to keep for backwards compatibility; can delete later.)
+          if (win.appId.startsWith("__notes_hub__:")) {
             const [, encoded] = win.appId.split(":");
             const slug = decodeURIComponent(encoded ?? "");
 
@@ -86,7 +120,7 @@ export function WindowManager(props: {
                 onMove={(x, y) => onMove(win.winId, x, y)}
                 onResize={(w, h) => onResize(win.winId, w, h)}
               >
-                <NotesApp slug={slug} />
+                <NotesHubApp initialSlug={slug || undefined} />
               </WindowFrame>
             );
           }
@@ -113,7 +147,7 @@ export function WindowManager(props: {
               ) : app.type === "external" ? (
                 <ExternalOpener url={app.url!} />
               ) : (
-                <InternalApp internalKey={app.internalKey} appId={app.id} />
+                <InternalApp internalKey={app.internalKey} win={win} />
               )}
             </WindowFrame>
           );

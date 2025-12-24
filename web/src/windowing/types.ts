@@ -16,4 +16,7 @@ export type WindowState = {
 
   // store previous bounds to restore from maximize
   restoreRect?: Rect;
+
+  // optional params passed into the app renderer
+  params?: Record<string, unknown>;
 };

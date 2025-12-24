@@ -1,18 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   API_BASE,
+  adminCreateNote,
+  adminDeleteNote,
+  adminFetchNotes,
+  adminUpdateNote,
   adminCreateProject,
   adminDeleteProject,
   adminFetchProjects,
-  adminUpdateNote,
   adminUpdateProject,
   apiErrorMessage,
   apiErrorStatus,
+  type AdminNoteDTO,
   type ProjectDTO,
 } from "../data/api";
 
 type LoginResp = { token: string; email: string };
-type NoteResp = { title: string; body: string };
 
 type Tab = "notes" | "projects";
 
@@ -31,13 +34,14 @@ const parseHighlights = (s: string): string[] =>
 
 const stringifyHighlights = (arr: string[]): string => arr.join(", ");
 
-/** Notes you can edit in CMS */
-const NOTE_OPTIONS: { slug: string; label: string }[] = [
-  { slug: "about", label: "About Me" },
-  { slug: "edu-cs50", label: "Harvard CS50" },
-  { slug: "edu-learn-academy", label: "LEARN Academy (Frontend)" },
-  { slug: "edu-kean", label: "Kean University — Accounting" },
-];
+function normalizeSlug(s: string) {
+  return s.trim().toLowerCase();
+}
+
+function isValidSlug(s: string) {
+  // letters/numbers, hyphen/underscore allowed; must start with alnum
+  return /^[a-z0-9][a-z0-9-_]*$/.test(s);
+}
 
 export function AdminCmsApp() {
   const [tab, setTab] = useState<Tab>("notes");
@@ -50,11 +54,18 @@ export function AdminCmsApp() {
 
   const authed = token.length > 0;
 
-  // notes
-  const [noteSlug, setNoteSlug] = useState<string>("about");
-  const [noteTitle, setNoteTitle] = useState("About Me");
+  // notes list + editor
+  const [notes, setNotes] = useState<AdminNoteDTO[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+
+  const [noteSlug, setNoteSlug] = useState<string>("");
+  const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
-  const [loadingNote, setLoadingNote] = useState(false);
+
+  // create note
+  const [newSlug, setNewSlug] = useState("");
+  const [newTitle, setNewTitle] = useState("");
+  const [newBody, setNewBody] = useState("");
 
   // projects
   const [projects, setProjects] = useState<ProjectDTO[]>([]);
@@ -68,36 +79,55 @@ export function AdminCmsApp() {
 
   /* ---------------- Effects ---------------- */
 
-  // Load selected note (after auth)
+  // Load notes when authed + in notes tab
   useEffect(() => {
-    if (!authed) return;
-    if (tab !== "notes") return;
+    if (!authed || tab !== "notes") return;
 
     let alive = true;
 
     (async () => {
-      setLoadingNote(true);
+      setNotesLoading(true);
       try {
-        const res = await fetch(`${API_BASE}/api/notes/${encodeURIComponent(noteSlug)}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as NoteResp;
-
+        const data = await adminFetchNotes(token);
         if (!alive) return;
-        setNoteTitle(data.title);
-        setNoteBody(data.body);
+
+        const sorted = data.slice().sort((a, b) => a.slug.localeCompare(b.slug));
+        setNotes(sorted);
+
+        // select first note if none selected
+        const first = sorted[0];
+        if (first && !noteSlug) {
+          setNoteSlug(first.slug);
+          setNoteTitle(first.title);
+          setNoteBody(first.body);
+        } else if (noteSlug) {
+          const found = sorted.find((n) => n.slug === noteSlug);
+          if (found) {
+            setNoteTitle(found.title);
+            setNoteBody(found.body);
+          }
+        }
+
         setStatus("");
       } catch (err: unknown) {
         if (!alive) return;
-        setStatus(err instanceof Error ? err.message : "Failed to load note.");
+
+        if (apiErrorStatus(err) === 401) {
+          doLogout("Session expired. Please log in again.");
+          return;
+        }
+
+        setStatus(apiErrorMessage(err));
       } finally {
-        if (alive) setLoadingNote(false);
+        if (alive) setNotesLoading(false);
       }
     })();
 
     return () => {
       alive = false;
     };
-  }, [authed, tab, noteSlug]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, tab, token]);
 
   // Load Projects when tab becomes active
   useEffect(() => {
@@ -140,6 +170,10 @@ export function AdminCmsApp() {
     setToken("");
     setProjects([]);
     setActiveProjectId(null);
+    setNotes([]);
+    setNoteSlug("");
+    setNoteTitle("");
+    setNoteBody("");
     setTab("notes");
     setStatus(msg);
   };
@@ -169,13 +203,53 @@ export function AdminCmsApp() {
     }
   };
 
-  /* ---------------- Notes ---------------- */
+  /* ---------------- Notes CRUD ---------------- */
+
+  const selectNote = (slug: string) => {
+    setNoteSlug(slug);
+    const found = notes.find((n) => n.slug === slug);
+    if (found) {
+      setNoteTitle(found.title);
+      setNoteBody(found.body);
+    }
+  };
+
+  const refreshNotes = async (msg = "") => {
+    setNotesLoading(true);
+    try {
+      const data = await adminFetchNotes(token);
+      const sorted = data.slice().sort((a, b) => a.slug.localeCompare(b.slug));
+      setNotes(sorted);
+
+      const still = sorted.find((n) => n.slug === noteSlug) ?? sorted[0];
+      if (still) {
+        setNoteSlug(still.slug);
+        setNoteTitle(still.title);
+        setNoteBody(still.body);
+      } else {
+        setNoteSlug("");
+        setNoteTitle("");
+        setNoteBody("");
+      }
+
+      if (msg) setStatus(msg);
+    } catch (err: unknown) {
+      if (apiErrorStatus(err) === 401) {
+        doLogout("Session expired. Please log in again.");
+        return;
+      }
+      setStatus(apiErrorMessage(err));
+    } finally {
+      setNotesLoading(false);
+    }
+  };
 
   const saveNote = async () => {
+    if (!noteSlug) return;
     setStatus(`Saving "${noteSlug}"…`);
     try {
       await adminUpdateNote(token, noteSlug, { title: noteTitle, body: noteBody });
-      setStatus("Note saved ✅");
+      await refreshNotes("Note saved ✅");
     } catch (err: unknown) {
       if (apiErrorStatus(err) === 401) {
         doLogout("Session expired. Please log in again.");
@@ -185,7 +259,56 @@ export function AdminCmsApp() {
     }
   };
 
-  /* ---------------- Projects ---------------- */
+  const createNote = async () => {
+    const slug = normalizeSlug(newSlug);
+    const title = newTitle.trim();
+    const body = newBody;
+
+    if (!slug) return setStatus("Slug is required.");
+    if (!isValidSlug(slug)) return setStatus("Invalid slug. Use letters/numbers with - or _ only.");
+    if (!title) return setStatus("Title is required.");
+
+    if (notes.some((n) => n.slug === slug)) {
+      return setStatus(`Slug already exists: ${slug}`);
+    }
+
+    setStatus("Creating note…");
+    try {
+      await adminCreateNote(token, { slug, title, body });
+      setNewSlug("");
+      setNewTitle("");
+      setNewBody("");
+      setNoteSlug(slug);
+      await refreshNotes("Note created ✅");
+    } catch (err: unknown) {
+      if (apiErrorStatus(err) === 401) {
+        doLogout("Session expired. Please log in again.");
+        return;
+      }
+      setStatus(apiErrorMessage(err));
+    }
+  };
+
+  const deleteNote = async () => {
+    if (!noteSlug) return;
+    const ok = window.confirm(`Delete note "${noteSlug}"?`);
+    if (!ok) return;
+
+    setStatus("Deleting note…");
+    try {
+      await adminDeleteNote(token, noteSlug);
+      setNoteSlug("");
+      await refreshNotes("Note deleted ✅");
+    } catch (err: unknown) {
+      if (apiErrorStatus(err) === 401) {
+        doLogout("Session expired. Please log in again.");
+        return;
+      }
+      setStatus(apiErrorMessage(err));
+    }
+  };
+
+  /* ---------------- Projects CRUD ---------------- */
 
   const setProjectPatch = (patch: Partial<ProjectDTO>) => {
     if (!activeProject) return;
@@ -313,16 +436,148 @@ export function AdminCmsApp() {
           onLogin={login}
         />
       ) : tab === "notes" ? (
-        <NotesEditor
-          noteSlug={noteSlug}
-          setNoteSlug={setNoteSlug}
-          noteTitle={noteTitle}
-          setNoteTitle={setNoteTitle}
-          noteBody={noteBody}
-          setNoteBody={setNoteBody}
-          onSave={saveNote}
-          loading={loadingNote}
-        />
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "320px 1fr", gap: 12 }}>
+          {/* Left: list + create */}
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => refreshNotes("Notes refreshed ✅")} style={btnStyle}>
+                Refresh
+              </button>
+              <button
+                onClick={deleteNote}
+                style={{ ...btnStyle, background: "rgba(255,0,0,0.14)" }}
+                disabled={!noteSlug}
+                title={!noteSlug ? "Select a note first" : "Delete selected note"}
+              >
+                Delete
+              </button>
+            </div>
+
+            <div
+              style={{
+                border: "1px solid rgba(255,255,255,0.10)",
+                borderRadius: 14,
+                overflow: "hidden",
+                background: "rgba(0,0,0,0.18)",
+              }}
+            >
+              {notesLoading ? (
+                <div style={{ padding: 12, color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
+                  Loading notes…
+                </div>
+              ) : notes.length === 0 ? (
+                <div style={{ padding: 12, color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
+                  No notes found.
+                </div>
+              ) : (
+                notes.map((n) => {
+                  const active = noteSlug === n.slug;
+                  return (
+                    <button
+                      key={n.slug}
+                      onClick={() => selectNote(n.slug)}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "10px 12px",
+                        border: "none",
+                        cursor: "pointer",
+                        background: active ? "rgba(255,255,255,0.10)" : "transparent",
+                        color: "rgba(255,255,255,0.9)",
+                        borderBottom: "1px solid rgba(255,255,255,0.06)",
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: 13 }}>{n.title}</div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>
+                        {n.slug}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Create note */}
+            <div
+              style={{
+                border: "1px solid rgba(255,255,255,0.10)",
+                borderRadius: 14,
+                padding: 12,
+                background: "rgba(0,0,0,0.18)",
+                display: "grid",
+                gap: 8,
+              }}
+            >
+              <div style={{ fontWeight: 800 }}>Create Note</div>
+
+              <div style={smallLabel}>Slug</div>
+              <input value={newSlug} onChange={(e) => setNewSlug(e.target.value)} style={inputStyle} />
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+                Use: letters/numbers with <b>-</b> or <b>_</b>. Example: <code>edu-cs50</code>
+              </div>
+
+              <div style={smallLabel}>Title</div>
+              <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} style={inputStyle} />
+
+              <div style={smallLabel}>Body</div>
+              <textarea
+                value={newBody}
+                onChange={(e) => setNewBody(e.target.value)}
+                style={{ ...inputStyle, minHeight: 120, resize: "vertical" }}
+              />
+
+              <button onClick={createNote} style={btnStyle}>
+                + Create
+              </button>
+            </div>
+          </div>
+
+          {/* Right: editor */}
+          <div
+            style={{
+              border: "1px solid rgba(255,255,255,0.10)",
+              borderRadius: 14,
+              padding: 12,
+              background: "rgba(0,0,0,0.18)",
+              minHeight: 420,
+              overflow: "auto",
+              maxHeight: "100%",
+            }}
+          >
+            {!noteSlug ? (
+              <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
+                Select a note to edit
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 10, maxWidth: 980 }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
+                    Editing: <b>{noteSlug}</b>
+                  </div>
+                  <div style={{ marginLeft: "auto", fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
+                    {notesLoading ? "Loading…" : `${notes.length} notes`}
+                  </div>
+                </div>
+
+                <div style={smallLabel}>Title</div>
+                <input value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} style={inputStyle} />
+
+                <div style={smallLabel}>Body</div>
+                <textarea
+                  value={noteBody}
+                  onChange={(e) => setNoteBody(e.target.value)}
+                  style={{ ...inputStyle, minHeight: 280, resize: "vertical" }}
+                />
+
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={saveNote} style={btnStyle}>
+                    Save Note
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         <ProjectsEditor
           projects={projects}
@@ -400,63 +655,6 @@ function LoginForm({
       <button onClick={onLogin} style={btnStyle}>
         Login
       </button>
-    </div>
-  );
-}
-
-function NotesEditor({
-  noteSlug,
-  setNoteSlug,
-  noteTitle,
-  setNoteTitle,
-  noteBody,
-  setNoteBody,
-  onSave,
-  loading,
-}: {
-  noteSlug: string;
-  setNoteSlug: (v: string) => void;
-  noteTitle: string;
-  setNoteTitle: (v: string) => void;
-  noteBody: string;
-  setNoteBody: (v: string) => void;
-  onSave: () => void;
-  loading: boolean;
-}) {
-  return (
-    <div style={{ marginTop: 14, display: "grid", gap: 10, maxWidth: 900 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>Edit Note</div>
-        {loading && <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>Loading…</div>}
-        <div style={{ marginLeft: "auto", fontSize: 12, color: "rgba(255,255,255,0.6)" }}>
-          Slug:
-        </div>
-        <select
-          value={noteSlug}
-          onChange={(e) => setNoteSlug(e.target.value)}
-          style={{ ...inputStyle, width: 260, padding: "8px 10px" }}
-        >
-          {NOTE_OPTIONS.map((o) => (
-            <option key={o.slug} value={o.slug}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <input value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} style={inputStyle} />
-
-      <textarea
-        value={noteBody}
-        onChange={(e) => setNoteBody(e.target.value)}
-        style={{ ...inputStyle, minHeight: 260, resize: "vertical" }}
-      />
-
-      <div style={{ display: "flex", gap: 10 }}>
-        <button onClick={onSave} style={btnStyle}>
-          Save Note
-        </button>
-      </div>
     </div>
   );
 }

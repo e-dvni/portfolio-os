@@ -47,7 +47,7 @@ export function FinderApp() {
               ? "led-builder"
               : normalized.includes("resume")
               ? "resume"
-              : "about";
+              : "notes";
 
           return { id: `api-${p.id}`, title, subtitle, kind: "app", appId };
         });

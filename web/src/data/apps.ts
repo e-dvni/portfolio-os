@@ -51,14 +51,14 @@ export const APPS: AppDef[] = [
     internalKey: "admin",
   },
   {
-    id: "about",
-    name: "About Me",
+    id: "notes",
+    name: "Notes",
     type: "internal",
-    windowTitle: "Notes — About Me",
-    defaultSize: { w: 720, h: 520 },
+    windowTitle: "Notes",
+    defaultSize: { w: 900, h: 600 },
     desktop: true,
-    icon: "/icons/notes.png",
-    internalKey: "notes",
+    icon: "/icons/aboutMe.png", // or whatever icon you want
+    internalKey: "notes-hub",
   },
   {
     id: "github",
