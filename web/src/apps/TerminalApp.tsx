@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchProjects, type ProjectDTO } from "../data/api";
+import { useLauncher } from "../app/launcherContext";
 
 type TermLine = { kind: "out" | "err" | "cmd"; text: string };
 
@@ -58,21 +59,42 @@ function tokenize(input: string): string[] {
   return out;
 }
 
+const NOTES: { slug: string; title: string }[] = [
+  { slug: "about", title: "About Me" },
+  { slug: "edu-cs50", title: "Harvard CS50" },
+  { slug: "edu-learn-academy", title: "LEARN Academy (Frontend)" },
+  { slug: "edu-kean", title: "Kean University — Accounting" },
+];
+
 export function TerminalApp() {
+  const { openNote } = useLauncher();
+
   const inputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const [lines, setLines] = useState<TermLine[]>([
     { kind: "out", text: `Portfolio OS Terminal — ${nowTime()}` },
-    { kind: "out", text: "Type `help` to see commands. Try `projects`." },
+    { kind: "out", text: "Type `help` to see commands. Try `projects` or `notes`." },
   ]);
 
   const [history, setHistory] = useState<string[]>([]);
-
   const [projects, setProjects] = useState<ProjectDTO[] | null>(null);
 
   const commandNames = useMemo(
-    () => ["help", "clear", "whoami", "skills", "projects", "open", "contact", "github", "linkedin", "email", "time"],
+    () => [
+      "help",
+      "clear",
+      "whoami",
+      "skills",
+      "projects",
+      "notes",
+      "open",
+      "contact",
+      "github",
+      "linkedin",
+      "email",
+      "time",
+    ],
     []
   );
 
@@ -115,7 +137,14 @@ export function TerminalApp() {
       whoami: ["whoami", "Print a short profile summary."],
       skills: ["skills", "Show a quick skill matrix."],
       projects: ["projects", "List projects loaded from the Rails API."],
-      open: ['open <#|name> [repo|live]', "Examples: open 1", 'open "Custom LED Builder" live'],
+      notes: ["notes", "List available notes you can open."],
+      open: [
+        "open <#|project name|note-slug> [repo|live]",
+        "Examples:",
+        "  open 1",
+        '  open "Custom LED Builder" live',
+        "  open edu-cs50",
+      ],
       contact: ["contact", "Show contact shortcuts."],
       github: ["github", "Open GitHub in a new tab."],
       linkedin: ["linkedin", "Open LinkedIn in a new tab."],
@@ -124,21 +153,20 @@ export function TerminalApp() {
     };
 
     if (c && blocks[c]) {
-      push([
-        { kind: "out", text: blocks[c][0] },
-        { kind: "out", text: `  ${blocks[c].slice(1).join("\n  ")}` },
-      ]);
+      push([{ kind: "out", text: blocks[c][0] }, { kind: "out", text: `  ${blocks[c].slice(1).join("\n  ")}` }]);
       return;
     }
 
     push([
       { kind: "out", text: "Commands:" },
       { kind: "out", text: "  help [cmd]   clear   whoami   skills   time" },
-      { kind: "out", text: "  projects     open    contact  github   linkedin  email" },
+      { kind: "out", text: "  projects     notes   open    contact" },
+      { kind: "out", text: "  github       linkedin  email" },
       { kind: "out", text: "Tips:" },
       { kind: "out", text: "  • Use ↑ / ↓ for history" },
       { kind: "out", text: "  • Press Tab to autocomplete commands (and `open` targets)" },
       { kind: "out", text: "  • `projects` pulls live data from your Rails API" },
+      { kind: "out", text: "  • `notes` lists note slugs you can open" },
     ]);
   };
 
@@ -146,7 +174,7 @@ export function TerminalApp() {
     push([
       { kind: "out", text: "Daniel Lee" },
       { kind: "out", text: "Builder mindset • React + Rails • Product-oriented engineering" },
-      { kind: "out", text: "Type `projects` to see what I’ve built." },
+      { kind: "out", text: "Type `projects` or `notes` to explore." },
     ]);
   };
 
@@ -158,6 +186,12 @@ export function TerminalApp() {
       { kind: "out", text: "  Product:   UX polish, OS-like windowing, live CMS" },
       { kind: "out", text: "  Workflow:  Git/GitHub, debugging, incremental delivery" },
     ]);
+  };
+
+  const printNotes = () => {
+    push({ kind: "out", text: "Available notes:" });
+    NOTES.forEach((n) => push({ kind: "out", text: `  - ${n.slug}` }));
+    push({ kind: "out", text: "Tip: open <slug> (example: open edu-cs50)" });
   };
 
   const printProjects = async () => {
@@ -187,7 +221,10 @@ export function TerminalApp() {
       const title = ellip(p.title ?? "Untitled", titleW);
       const stack = ellip(p.tech_stack ?? "—", stackW);
       const links = `${p.repo_url ? "repo" : "—"} / ${p.live_url ? "live" : "—"}`;
-      push({ kind: "out", text: `${padRight(n, idxW)}  ${padRight(title, titleW)}  ${padRight(stack, stackW)}  ${links}` });
+      push({
+        kind: "out",
+        text: `${padRight(n, idxW)}  ${padRight(title, titleW)}  ${padRight(stack, stackW)}  ${links}`,
+      });
     });
 
     push({ kind: "out", text: "" });
@@ -214,41 +251,55 @@ export function TerminalApp() {
         null;
     }
 
-    if (!proj) {
-      push({ kind: "err", text: `Project not found: ${target}` });
-      return;
-    }
+    if (!proj) return false;
 
     const mode = normalize(which ?? "");
     const repo = proj.repo_url ?? "";
     const live = proj.live_url ?? "";
 
     if (mode === "repo") {
-      if (!repo) return push({ kind: "err", text: "That project has no repo URL." });
+      if (!repo) {
+        push({ kind: "err", text: "That project has no repo URL." });
+        return true;
+      }
       window.open(repo, "_blank", "noopener,noreferrer");
       push({ kind: "out", text: `Opened repo: ${proj.title}` });
-      return;
+      return true;
     }
 
     if (mode === "live") {
-      if (!live) return push({ kind: "err", text: "That project has no live URL." });
+      if (!live) {
+        push({ kind: "err", text: "That project has no live URL." });
+        return true;
+      }
       window.open(live, "_blank", "noopener,noreferrer");
       push({ kind: "out", text: `Opened live: ${proj.title}` });
-      return;
+      return true;
     }
 
     if (live) {
       window.open(live, "_blank", "noopener,noreferrer");
       push({ kind: "out", text: `Opened live: ${proj.title}` });
-      return;
+      return true;
     }
     if (repo) {
       window.open(repo, "_blank", "noopener,noreferrer");
       push({ kind: "out", text: `Opened repo: ${proj.title}` });
-      return;
+      return true;
     }
 
     push({ kind: "err", text: "No links found for that project (repo/live missing)." });
+    return true;
+  };
+
+  const tryOpenNote = (slugRaw: string) => {
+    const slug = normalize(slugRaw);
+    const match = NOTES.find((n) => normalize(n.slug) === slug);
+    if (!match) return false;
+
+    openNote({ title: match.title, slug: match.slug });
+    push({ kind: "out", text: `Opened note: ${match.slug}` });
+    return true;
   };
 
   const printContact = () => {
@@ -265,7 +316,6 @@ export function TerminalApp() {
     if (!trimmed) return;
 
     setHistory((h) => [...h, trimmed]);
-
     push({ kind: "cmd", text: `> ${trimmed}` });
 
     const parts = tokenize(trimmed);
@@ -282,11 +332,24 @@ export function TerminalApp() {
     if (cmd === "skills") return printSkills();
     if (cmd === "time") return push({ kind: "out", text: nowTime() });
 
-    if (cmd === "projects") return printProjects();
+    if (cmd === "projects") return void (await printProjects());
+    if (cmd === "notes") return printNotes();
 
     if (cmd === "open") {
-      if (!a1) return push({ kind: "err", text: "Usage: open <#|name> [repo|live]" });
-      return openProject(a1, a2);
+      if (!a1) {
+        push({ kind: "err", text: "Usage: open <#|project name|note-slug> [repo|live]" });
+        return;
+      }
+
+      // ✅ First: try opening as a note slug
+      if (tryOpenNote(a1)) return;
+
+      // ✅ Else: treat as project target (existing behavior)
+      const handled = await openProject(a1, a2);
+      if (!handled) {
+        push({ kind: "err", text: `Not found: ${a1} (try \`projects\` or \`notes\`)` });
+      }
+      return;
     }
 
     if (cmd === "contact") return printContact();
@@ -298,7 +361,11 @@ export function TerminalApp() {
     }
 
     if (cmd === "linkedin") {
-      window.open("https://www.linkedin.com/in/daniel-lee-7157a31a8/", "_blank", "noopener,noreferrer");
+      window.open(
+        "https://www.linkedin.com/in/daniel-lee-7157a31a8/",
+        "_blank",
+        "noopener,noreferrer"
+      );
       push({ kind: "out", text: "Opened LinkedIn." });
       return;
     }
@@ -319,6 +386,7 @@ export function TerminalApp() {
     const raw = el.value;
     const parts = tokenize(raw);
 
+    // Command autocomplete
     if (parts.length <= 1 && !raw.includes(" ")) {
       const prefix = normalize(raw);
       const matches = commandNames.filter((c) => c.startsWith(prefix));
@@ -327,23 +395,44 @@ export function TerminalApp() {
       return;
     }
 
+    // open target autocomplete (projects + notes)
     const cmd = normalize(parts[0] ?? "");
     if (cmd === "open") {
       const targetPrefix = parts[1] ?? "";
+      const pref = normalize(targetPrefix);
+
+      // Notes first (fast + no API)
+      const noteMatches = NOTES.filter((n) => normalize(n.slug).startsWith(pref));
+      if (noteMatches.length === 1) {
+        el.value = `${parts[0]} ${noteMatches[0].slug} `;
+        return;
+      }
+      if (noteMatches.length > 1) {
+        push({ kind: "out", text: noteMatches.map((n) => n.slug).join("   ") });
+        return;
+      }
+
+      // Projects (may require API)
       const data = await ensureProjects();
       if (!data) return;
 
       const sorted = data.slice().sort((a, b) => (a.order_index ?? 999) - (b.order_index ?? 999));
-
       const candidates = sorted.map((p, i) => ({ num: String(i + 1), title: p.title ?? "" }));
-      const pref = normalize(targetPrefix);
 
-      const matches = candidates.filter((c) => c.num.startsWith(pref) || normalize(c.title).startsWith(pref));
+      const matches = candidates.filter(
+        (c) => c.num.startsWith(pref) || normalize(c.title).startsWith(pref)
+      );
 
       if (matches.length === 1) {
         el.value = `${parts[0]} "${matches[0].title}" `;
       } else if (matches.length > 1) {
-        push({ kind: "out", text: matches.slice(0, 8).map((m) => `${m.num}:${m.title}`).join("   ") });
+        push({
+          kind: "out",
+          text: matches
+            .slice(0, 8)
+            .map((m) => `${m.num}:${m.title}`)
+            .join("   "),
+        });
       }
     }
   };
@@ -420,7 +509,7 @@ export function TerminalApp() {
         ref={inputRef}
         autoFocus
         onKeyDown={onKeyDown}
-        placeholder="Type a command… (help, projects, open 1)"
+        placeholder="Type a command… (help, projects, notes, open edu-cs50)"
         style={{
           marginTop: 12,
           width: "100%",
