@@ -1,65 +1,67 @@
-import { useEffect, useState } from "react";
-import { API_BASE } from "../data/api";
+import { useEffect, useMemo, useState } from "react";
+import {
+  API_BASE,
+  adminCreateProject,
+  adminDeleteProject,
+  adminFetchProjects,
+  adminUpdateNote,
+  adminUpdateProject,
+  apiErrorMessage,
+  apiErrorStatus,
+  type ProjectDTO,
+} from "../data/api";
 
 type LoginResp = { token: string; email: string };
 type NoteResp = { title: string; body: string };
 
+type Tab = "about" | "projects";
+
 const STORAGE_KEY = "portfolio_admin_token";
 
-type ApiError = {
-  status: number;
-  statusText: string;
-  bodyText?: string;
+const emptyStrToNull = (s: string): string | null => {
+  const v = s.trim();
+  return v.length ? v : null;
 };
 
-function isApiError(x: unknown): x is ApiError {
-  return (
-    typeof x === "object" &&
-    x !== null &&
-    "status" in x &&
-    "statusText" in x &&
-    typeof (x as { status: unknown }).status === "number" &&
-    typeof (x as { statusText: unknown }).statusText === "string"
-  );
-}
+const parseHighlights = (s: string): string[] =>
+  s
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 
-async function jsonOrThrow<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const bodyText = await res.text().catch(() => "");
-    throw {
-      status: res.status,
-      statusText: res.statusText,
-      bodyText,
-    } satisfies ApiError;
-  }
-  return res.json() as Promise<T>;
-}
+const stringifyHighlights = (arr: string[]): string => arr.join(", ");
 
-function errorMessage(err: unknown): string {
-  if (isApiError(err)) {
-    const extra = err.bodyText ? ` — ${err.bodyText}` : "";
-    return `${err.status} ${err.statusText}${extra}`;
-  }
-  if (err instanceof Error) return err.message;
-  return "Something went wrong.";
-}
-
-function errorStatus(err: unknown): number | null {
-  return isApiError(err) ? err.status : null;
-}
+/* ---------------- Component ---------------- */
 
 export function AdminCmsApp() {
+  const [tab, setTab] = useState<Tab>("about");
+
+  // auth
   const [email, setEmail] = useState("danielslee078@gmail.com");
   const [password, setPassword] = useState("");
   const [token, setToken] = useState<string>(() => localStorage.getItem(STORAGE_KEY) ?? "");
-  const [status, setStatus] = useState<string>("");
+  const [status, setStatus] = useState("");
 
+  // about
   const [noteTitle, setNoteTitle] = useState("About Me");
   const [noteBody, setNoteBody] = useState("");
   const [loadingNote, setLoadingNote] = useState(false);
 
+  // projects
+  const [projects, setProjects] = useState<ProjectDTO[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+
   const authed = token.length > 0;
 
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === activeProjectId) ?? null,
+    [projects, activeProjectId]
+  );
+
+  /* ---------------- Effects ---------------- */
+
+  // Load About note (public endpoint, but we only load after auth for simplicity)
   useEffect(() => {
     if (!authed) return;
 
@@ -69,15 +71,15 @@ export function AdminCmsApp() {
       setLoadingNote(true);
       try {
         const res = await fetch(`${API_BASE}/api/notes/about`);
-        const data = await jsonOrThrow<NoteResp>(res);
-        if (!alive) return;
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as NoteResp;
 
+        if (!alive) return;
         setNoteTitle(data.title);
         setNoteBody(data.body);
-        setStatus("Loaded About note.");
       } catch (err: unknown) {
         if (!alive) return;
-        setStatus(errorMessage(err));
+        setStatus(err instanceof Error ? err.message : "Failed to load About note.");
       } finally {
         if (alive) setLoadingNote(false);
       }
@@ -88,6 +90,51 @@ export function AdminCmsApp() {
     };
   }, [authed]);
 
+  // Load Projects when tab becomes active
+  useEffect(() => {
+    if (!authed || tab !== "projects") return;
+
+    let alive = true;
+
+    (async () => {
+      setLoadingProjects(true);
+      try {
+        const data = await adminFetchProjects(token);
+        if (!alive) return;
+
+        setProjects(data);
+        setActiveProjectId(data[0]?.id ?? null);
+      } catch (err: unknown) {
+        if (!alive) return;
+
+        if (apiErrorStatus(err) === 401) {
+          doLogout("Session expired. Please log in again.");
+          return;
+        }
+
+        setStatus(apiErrorMessage(err));
+      } finally {
+        if (alive) setLoadingProjects(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+    // token included to refetch if token changes
+  }, [authed, tab, token]);
+
+  /* ---------------- Auth ---------------- */
+
+  const doLogout = (msg = "Logged out.") => {
+    localStorage.removeItem(STORAGE_KEY);
+    setToken("");
+    setProjects([]);
+    setActiveProjectId(null);
+    setTab("about");
+    setStatus(msg);
+  };
+
   const login = async () => {
     setStatus("Logging in…");
     try {
@@ -97,140 +144,497 @@ export function AdminCmsApp() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await jsonOrThrow<LoginResp>(res);
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`${res.status} ${res.statusText}${body ? ` — ${body}` : ""}`);
+      }
+
+      const data = (await res.json()) as LoginResp;
 
       localStorage.setItem(STORAGE_KEY, data.token);
       setToken(data.token);
       setPassword("");
       setStatus(`Logged in as ${data.email}`);
     } catch (err: unknown) {
-      setStatus(errorMessage(err));
+      setStatus(err instanceof Error ? err.message : "Login failed.");
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    setToken("");
-    setStatus("Logged out.");
-  };
+  /* ---------------- About ---------------- */
 
   const saveAbout = async () => {
-    setStatus("Saving…");
+    setStatus("Saving About…");
     try {
-      const res = await fetch(`${API_BASE}/api/admin/notes/about`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`, // ✅ no brackets
-        },
-        body: JSON.stringify({ note: { title: noteTitle, body: noteBody } }),
-      });
-
-      await jsonOrThrow<NoteResp>(res);
-      setStatus("Saved ✅");
+      await adminUpdateNote(token, "about", { title: noteTitle, body: noteBody });
+      setStatus("About saved ✅");
     } catch (err: unknown) {
-      const status = errorStatus(err);
-
-      // If token expired/invalid, force logout and show message
-      if (status === 401) {
-        logout();
-        setStatus("Session expired. Please log in again.");
+      if (apiErrorStatus(err) === 401) {
+        doLogout("Session expired. Please log in again.");
         return;
       }
-
-      setStatus(errorMessage(err));
+      setStatus(apiErrorMessage(err));
     }
   };
 
+  /* ---------------- Projects ---------------- */
+
+  const setProjectPatch = (patch: Partial<ProjectDTO>) => {
+    if (!activeProject) return;
+    setProjects((prev) => prev.map((p) => (p.id === activeProject.id ? { ...p, ...patch } : p)));
+  };
+
+  const refreshProjects = async () => {
+    setLoadingProjects(true);
+    try {
+      const data = await adminFetchProjects(token);
+      setProjects(data);
+      setActiveProjectId((prevId) => data.find((p) => p.id === prevId)?.id ?? data[0]?.id ?? null);
+      setStatus("Projects refreshed ✅");
+    } catch (err: unknown) {
+      if (apiErrorStatus(err) === 401) {
+        doLogout("Session expired. Please log in again.");
+        return;
+      }
+      setStatus(apiErrorMessage(err));
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
+  const addProject = async () => {
+    setStatus("Creating project…");
+    try {
+      const created = await adminCreateProject(token, {
+        title: "New Project",
+        subtitle: null,
+        tech_stack: null,
+        summary: null,
+        repo_url: null,
+        live_url: null,
+        order_index: (projects.at(-1)?.order_index ?? projects.length) + 1,
+        highlights: [],
+        media: [],
+      });
+
+      setProjects((prev) => [...prev, created]);
+      setActiveProjectId(created.id);
+      setStatus("Project created ✅");
+    } catch (err: unknown) {
+      setStatus(apiErrorMessage(err));
+    }
+  };
+
+  const saveProject = async () => {
+    if (!activeProject) return;
+    setStatus("Saving project…");
+
+    try {
+      const updated = await adminUpdateProject(token, activeProject.id, activeProject);
+      setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setStatus("Project saved ✅");
+    } catch (err: unknown) {
+      if (apiErrorStatus(err) === 401) {
+        doLogout("Session expired. Please log in again.");
+        return;
+      }
+      setStatus(apiErrorMessage(err));
+    }
+  };
+
+  const deleteProject = async () => {
+    if (!activeProject) return;
+    const ok = window.confirm(`Delete "${activeProject.title}"?`);
+    if (!ok) return;
+
+    setStatus("Deleting…");
+    try {
+      await adminDeleteProject(token, activeProject.id);
+      setProjects((prev) => prev.filter((p) => p.id !== activeProject.id));
+
+      // choose next active
+      setActiveProjectId((prevId) => {
+        const remaining = projects.filter((p) => p.id !== prevId);
+        return remaining[0]?.id ?? null;
+      });
+
+      setStatus("Project deleted ✅");
+    } catch (err: unknown) {
+      if (apiErrorStatus(err) === 401) {
+        doLogout("Session expired. Please log in again.");
+        return;
+      }
+      setStatus(apiErrorMessage(err));
+    }
+  };
+
+  /* ---------------- Render ---------------- */
+
   return (
-    <div
-      style={{
-        padding: 16,
-        height: "100%",
-        display: "grid",
-        gridTemplateRows: "auto 1fr auto",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    <div style={{ padding: 16, height: "100%", display: "grid", gridTemplateRows: "auto auto 1fr auto" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <h3 style={{ margin: 0 }}>Admin CMS</h3>
-        <div style={{ marginLeft: "auto", fontSize: 12, color: "rgba(255,255,255,0.65)" }}>
+        <div style={{ marginLeft: "auto", fontSize: 12, color: "rgba(255,255,255,0.6)" }}>
           {authed ? "Authenticated" : "Not logged in"}
         </div>
       </div>
 
-      {!authed ? (
-        <div style={{ marginTop: 14, maxWidth: 420 }}>
-          <div style={{ display: "grid", gap: 10 }}>
-            <label style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
-              Email
-              <input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                style={inputStyle}
-                placeholder="email"
-              />
-            </label>
+      {/* Tabs */}
+      {authed && (
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <TabButton active={tab === "about"} onClick={() => setTab("about")}>
+            About
+          </TabButton>
+          <TabButton active={tab === "projects"} onClick={() => setTab("projects")}>
+            Projects
+          </TabButton>
 
-            <label style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
-              Password
-              <input
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                type="password"
-                style={inputStyle}
-                placeholder="password"
-              />
-            </label>
-
-            <button onClick={login} style={btnStyle}>
-              Login
-            </button>
-
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
-              Tip: This is for local dev right now. We’ll harden it before deploy.
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <button onClick={logout} style={{ ...btnStyle, width: "fit-content" }}>
-              Logout
-            </button>
-            {loadingNote && (
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>Loading…</div>
-            )}
-          </div>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>Edit About Note</div>
-
-            <input value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} style={inputStyle} />
-
-            <textarea
-              value={noteBody}
-              onChange={(e) => setNoteBody(e.target.value)}
-              style={{ ...inputStyle, minHeight: 220, resize: "vertical" }}
-            />
-
-            <button onClick={saveAbout} style={btnStyle}>
-              Save About
-            </button>
-          </div>
+          <button onClick={() => doLogout()} style={{ ...btnStyle, marginLeft: "auto" }}>
+            Logout
+          </button>
         </div>
       )}
 
-      <div style={{ marginTop: 10, fontSize: 12, color: "rgba(255,255,255,0.6)" }}>
-        {status}
+      {/* Content */}
+      {!authed ? (
+        <LoginForm
+          email={email}
+          password={password}
+          setEmail={setEmail}
+          setPassword={setPassword}
+          onLogin={login}
+        />
+      ) : tab === "about" ? (
+        <AboutEditor
+          title={noteTitle}
+          body={noteBody}
+          setTitle={setNoteTitle}
+          setBody={setNoteBody}
+          onSave={saveAbout}
+          loading={loadingNote}
+        />
+      ) : (
+        <ProjectsEditor
+          projects={projects}
+          activeProject={activeProject}
+          setActiveProjectId={setActiveProjectId}
+          loading={loadingProjects}
+          onRefresh={refreshProjects}
+          onAdd={addProject}
+          onSave={saveProject}
+          onDelete={deleteProject}
+          onPatch={setProjectPatch}
+        />
+      )}
+
+      {/* Status */}
+      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>{status}</div>
+    </div>
+  );
+}
+
+/* ---------------- Subcomponents ---------------- */
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        ...btnStyle,
+        background: active ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function LoginForm({
+  email,
+  password,
+  setEmail,
+  setPassword,
+  onLogin,
+}: {
+  email: string;
+  password: string;
+  setEmail: (v: string) => void;
+  setPassword: (v: string) => void;
+  onLogin: () => void;
+}) {
+  return (
+    <div style={{ maxWidth: 420, marginTop: 20, display: "grid", gap: 10 }}>
+      <label style={labelStyle}>
+        Email
+        <input value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} />
+      </label>
+
+      <label style={labelStyle}>
+        Password
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          style={inputStyle}
+        />
+      </label>
+
+      <button onClick={onLogin} style={btnStyle}>
+        Login
+      </button>
+    </div>
+  );
+}
+
+function AboutEditor({
+  title,
+  body,
+  setTitle,
+  setBody,
+  onSave,
+  loading,
+}: {
+  title: string;
+  body: string;
+  setTitle: (v: string) => void;
+  setBody: (v: string) => void;
+  onSave: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div style={{ marginTop: 14, display: "grid", gap: 10, maxWidth: 900 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>Edit About Note</div>
+        {loading && <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>Loading…</div>}
+      </div>
+
+      <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} />
+
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        style={{ ...inputStyle, minHeight: 240, resize: "vertical" }}
+      />
+
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={onSave} style={btnStyle}>
+          Save About
+        </button>
       </div>
     </div>
   );
 }
 
+function ProjectsEditor({
+  projects,
+  activeProject,
+  setActiveProjectId,
+  loading,
+  onRefresh,
+  onAdd,
+  onSave,
+  onDelete,
+  onPatch,
+}: {
+  projects: ProjectDTO[];
+  activeProject: ProjectDTO | null;
+  setActiveProjectId: (id: number) => void;
+  loading: boolean;
+  onRefresh: () => void;
+  onAdd: () => void;
+  onSave: () => void;
+  onDelete: () => void;
+  onPatch: (patch: Partial<ProjectDTO>) => void;
+}) {
+  return (
+    <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "280px 1fr", gap: 12 }}>
+      {/* Left list */}
+      <div style={{ display: "grid", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onAdd} style={btnStyle}>
+            + New
+          </button>
+          <button onClick={onRefresh} style={btnStyle}>
+            Refresh
+          </button>
+        </div>
+
+        <div
+          style={{
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 14,
+            overflow: "hidden",
+            background: "rgba(0,0,0,0.18)",
+          }}
+        >
+          {loading ? (
+            <div style={{ padding: 12, color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
+              Loading projects…
+            </div>
+          ) : (
+            projects.map((p: ProjectDTO) => {
+              const active = activeProject?.id === p.id;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setActiveProjectId(p.id)}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "10px 12px",
+                    border: "none",
+                    cursor: "pointer",
+                    background: active ? "rgba(255,255,255,0.10)" : "transparent",
+                    color: "rgba(255,255,255,0.9)",
+                    borderBottom: "1px solid rgba(255,255,255,0.06)",
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>{p.title}</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>
+                    #{p.order_index ?? "—"} • {p.tech_stack ?? "No stack"}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Right editor */}
+      <div
+        style={{
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 14,
+            padding: 12,
+            background: "rgba(0,0,0,0.18)",
+            minHeight: 420,
+            overflow: "auto",
+            maxHeight: "100%",
+        }}
+      >
+        {!activeProject ? (
+          <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
+            Select a project to edit
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={smallLabel}>Title</div>
+              <input
+                value={activeProject.title}
+                onChange={(e) => onPatch({ title: e.target.value })}
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={smallLabel}>Subtitle</div>
+              <input
+                value={activeProject.subtitle ?? ""}
+                onChange={(e) => onPatch({ subtitle: emptyStrToNull(e.target.value) })}
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={smallLabel}>Tech Stack</div>
+              <input
+                value={activeProject.tech_stack ?? ""}
+                onChange={(e) => onPatch({ tech_stack: emptyStrToNull(e.target.value) })}
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={smallLabel}>Summary</div>
+              <textarea
+                value={activeProject.summary ?? ""}
+                onChange={(e) => onPatch({ summary: emptyStrToNull(e.target.value) })}
+                style={{ ...inputStyle, minHeight: 130, resize: "vertical" }}
+              />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={smallLabel}>Repo URL</div>
+                <input
+                  value={activeProject.repo_url ?? ""}
+                  onChange={(e) => onPatch({ repo_url: emptyStrToNull(e.target.value) })}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={smallLabel}>Live URL</div>
+                <input
+                  value={activeProject.live_url ?? ""}
+                  onChange={(e) => onPatch({ live_url: emptyStrToNull(e.target.value) })}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={smallLabel}>Order</div>
+                <input
+                  type="number"
+                  value={activeProject.order_index ?? 0}
+                  onChange={(e) => onPatch({ order_index: Number(e.target.value) })}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={smallLabel}>Highlights (comma separated)</div>
+                <input
+                  value={stringifyHighlights(activeProject.highlights ?? [])}
+                  onChange={(e) => onPatch({ highlights: parseHighlights(e.target.value) })}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+              <button onClick={onSave} style={btnStyle}>
+                Save Project
+              </button>
+              <button onClick={onDelete} style={{ ...btnStyle, background: "rgba(255,0,0,0.14)" }}>
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Styles ---------------- */
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "rgba(255,255,255,0.75)",
+  display: "grid",
+  gap: 6,
+};
+
+const smallLabel: React.CSSProperties = {
+  fontSize: 11,
+  color: "rgba(255,255,255,0.65)",
+};
+
 const inputStyle: React.CSSProperties = {
   display: "block",
   width: "100%",
-  marginTop: 6,
   padding: "10px 12px",
   borderRadius: 12,
   border: "1px solid rgba(255,255,255,0.12)",
@@ -240,7 +644,7 @@ const inputStyle: React.CSSProperties = {
 };
 
 const btnStyle: React.CSSProperties = {
-  padding: "10px 12px",
+  padding: "8px 12px",
   borderRadius: 12,
   border: "1px solid rgba(255,255,255,0.14)",
   background: "rgba(255,255,255,0.10)",

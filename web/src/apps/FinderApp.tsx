@@ -1,34 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAppRegistry } from "../app/appRegistryContext";
 import { useLauncher } from "../app/launcherContext";
-import { fetchProjects } from "../data/api";
+import { fetchProjects, type ProjectDTO } from "../data/api";
 
 type FinderSection = "projects" | "education" | "links";
 
-type FinderItem = {
-  id: string;
-  title: string;
-  subtitle?: string;
-  appId: string;
-};
-
-type ApiProject = {
-  title: string;
-  subtitle: string | null;
-  tech_stack: string | null;
-  summary: string | null;
-  repo_url: string | null;
-  live_url: string | null;
-  highlights: unknown;
-};
+type FinderItem =
+  | { id: string; title: string; subtitle?: string; kind: "app"; appId: string }
+  | { id: string; title: string; subtitle?: string; kind: "iframe" | "external"; url: string };
 
 export function FinderApp() {
-  const { openApp } = useLauncher();
+  const { openApp, openUrl } = useLauncher();
   const { getApp } = useAppRegistry();
 
   const [active, setActive] = useState<FinderSection>("projects");
 
-  // Projects from API (fallback to local app-based list)
   const [projectItems, setProjectItems] = useState<FinderItem[]>([]);
   const [projectSource, setProjectSource] = useState<"api" | "fallback">("fallback");
 
@@ -37,16 +23,24 @@ export function FinderApp() {
 
     (async () => {
       try {
-        const projects: ApiProject[] = await fetchProjects();
-
+        const projects: ProjectDTO[] = await fetchProjects();
         if (!alive) return;
 
-        // Map API projects into “openable” items.
-        // For now: route “Admin Dashboard” -> admin app, “Custom LED Builder” -> led-builder,
-        // otherwise open “about” (later we’ll add a real Projects window).
         const mapped: FinderItem[] = projects.map((p, idx) => {
-          const title = p.title ?? `Project ${idx + 1}`;
+          const title = p.title?.trim() || `Project ${idx + 1}`;
+          const subtitle = p.subtitle ?? p.tech_stack ?? "Click to open";
 
+          // If the project has a live URL, open it in an iframe window
+          if (p.live_url) {
+            return { id: `api-${p.id}`, title, subtitle, kind: "iframe", url: p.live_url };
+          }
+
+          // If the project has a repo URL, open in a new tab via external opener window
+          if (p.repo_url) {
+            return { id: `api-${p.id}`, title, subtitle, kind: "external", url: p.repo_url };
+          }
+
+          // Otherwise try to map known projects to internal apps
           const normalized = title.toLowerCase();
           const appId =
             normalized.includes("admin") ? "admin" :
@@ -54,23 +48,12 @@ export function FinderApp() {
             normalized.includes("resume") ? "resume" :
             "about";
 
-          const subtitle =
-            p.subtitle ??
-            p.tech_stack ??
-            "Click to open";
-
-          return {
-            id: `api-${idx}`,
-            title,
-            subtitle,
-            appId,
-          };
+          return { id: `api-${p.id}`, title, subtitle, kind: "app", appId };
         });
 
-        setProjectItems(mapped.length ? mapped : []);
+        setProjectItems(mapped);
         setProjectSource(mapped.length ? "api" : "fallback");
       } catch {
-        // keep fallback
         setProjectItems([]);
         setProjectSource("fallback");
       }
@@ -91,7 +74,6 @@ export function FinderApp() {
   );
 
   const itemsBySection: Record<FinderSection, FinderItem[]> = useMemo(() => {
-    // Fallback list based on apps registry
     const resume = getApp("resume");
     const led = getApp("led-builder");
     const admin = getApp("admin");
@@ -101,18 +83,21 @@ export function FinderApp() {
         id: "p1",
         title: admin?.name ?? "Admin Dashboard",
         subtitle: "Auth • Project tracking • Scheduling • CRM tools",
+        kind: "app",
         appId: "admin",
       },
       {
         id: "p2",
         title: led?.name ?? "Custom LED Builder",
-        subtitle: "Live builder (iframe) — later: native demo app",
+        subtitle: "Live builder (iframe)",
+        kind: "app",
         appId: "led-builder",
       },
       {
         id: "p3",
         title: resume?.name ?? "Resume.pdf",
         subtitle: "Open my resume (PDF)",
+        kind: "app",
         appId: "resume",
       },
     ];
@@ -120,34 +105,14 @@ export function FinderApp() {
     return {
       projects: projectItems.length ? projectItems : fallbackProjects,
       education: [
-        {
-          id: "e1",
-          title: "Harvard CS50",
-          subtitle: "Currently enrolled — CS fundamentals",
-          appId: "about",
-        },
-        {
-          id: "e2",
-          title: "LEARN Academy (Frontend)",
-          subtitle: "JS • React • HTML/CSS • Tailwind",
-          appId: "about",
-        },
-        {
-          id: "e3",
-          title: "Kean University — Accounting",
-          subtitle: "B.S. Accounting",
-          appId: "about",
-        },
+        { id: "e1", title: "Harvard CS50", subtitle: "Currently enrolled — CS fundamentals", kind: "app", appId: "about" },
+        { id: "e2", title: "LEARN Academy (Frontend)", subtitle: "JS • React • HTML/CSS • Tailwind", kind: "app", appId: "about" },
+        { id: "e3", title: "Kean University — Accounting", subtitle: "B.S. Accounting", kind: "app", appId: "about" },
       ],
       links: [
-        { id: "l1", title: "GitHub", subtitle: "github.com/e-dvni", appId: "github" },
-        {
-          id: "l2",
-          title: "LinkedIn",
-          subtitle: "linkedin.com/in/daniel-lee-7157a31a8",
-          appId: "linkedin",
-        },
-        { id: "l3", title: "Contact (Mail)", subtitle: "Send me an email", appId: "mail" },
+        { id: "l1", title: "GitHub", subtitle: "github.com/e-dvni", kind: "app", appId: "github" },
+        { id: "l2", title: "LinkedIn", subtitle: "linkedin.com/in/daniel-lee-7157a31a8", kind: "app", appId: "linkedin" },
+        { id: "l3", title: "Contact (Mail)", subtitle: "Send me an email", kind: "app", appId: "mail" },
       ],
     };
   }, [getApp, projectItems]);
@@ -157,14 +122,16 @@ export function FinderApp() {
 
   const list = itemsBySection[active];
 
+  const handleOpen = (item: FinderItem) => {
+    if (item.kind === "app") {
+      openApp(item.appId);
+    } else {
+      openUrl({ title: item.title, url: item.url, kind: item.kind });
+    }
+  };
+
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "grid",
-        gridTemplateColumns: "220px 1fr",
-      }}
-    >
+    <div style={{ height: "100%", display: "grid", gridTemplateColumns: "220px 1fr" }}>
       {/* Sidebar */}
       <div
         style={{
@@ -227,7 +194,7 @@ export function FinderApp() {
           {list.map((item) => (
             <div
               key={item.id}
-              onClick={() => openApp(item.appId)}
+              onClick={() => handleOpen(item)}
               style={{
                 padding: 14,
                 borderRadius: 14,

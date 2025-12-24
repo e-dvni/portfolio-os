@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { WindowManager } from "../windowing/WindowManager";
 import { useWindowStore } from "../windowing/useWindowStore";
 import { LauncherProvider } from "./LauncherProvider";
@@ -9,6 +9,15 @@ import { APPS as FALLBACK_APPS, type AppDef } from "../data/apps";
 import { fetchApps } from "../data/api";
 import { toAppDef } from "../data/adapters";
 import { AppRegistryProvider } from "./appRegistryProvider";
+
+const isTypingTarget = (t: EventTarget | null): boolean => {
+  if (!(t instanceof HTMLElement)) return false;
+  const tag = t.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable;
+};
+
+// Must match your CSS variables / dock styling
+const DOCK_SPACE_PX = 78 + 14; // dock height + gap (adjust if you change CSS)
 
 export function Desktop() {
   const wm = useWindowStore();
@@ -22,6 +31,26 @@ export function Desktop() {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
 
+  const desktopRef = useRef<HTMLDivElement | null>(null);
+
+  // ✅ Measure desktop work area (menu bar already excluded by .desktop inset)
+  useLayoutEffect(() => {
+    const el = desktopRef.current;
+    if (!el) return;
+
+    const compute = () => {
+      const r = el.getBoundingClientRect();
+      wm.setWorkArea({
+        w: Math.floor(r.width),
+        h: Math.floor(r.height - DOCK_SPACE_PX),
+      });
+    };
+
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, [wm]);
+
   // Load apps from Rails API (fallback if down)
   useEffect(() => {
     let alive = true;
@@ -30,12 +59,8 @@ export function Desktop() {
       try {
         const apiApps = await fetchApps();
         const mapped = apiApps.map(toAppDef);
-
-        // Sort like Rails order_index (already sorted server-side, but safe)
-        const sorted = mapped;
-
-        if (alive && sorted.length) {
-          setApps(sorted);
+        if (alive && mapped.length) {
+          setApps(mapped);
           setAppsSource("api");
         }
       } catch {
@@ -67,6 +92,18 @@ export function Desktop() {
     [apps, wm]
   );
 
+  const openUrl = useCallback(
+    (args: { title: string; url: string; kind: "iframe" | "external" }) => {
+      wm.openUrl(args);
+      setSpotlightOpen(false);
+      setQuery("");
+      setMenu(null);
+    },
+    [wm]
+  );
+
+  const minimizedWins = useMemo(() => wm.wins.filter((w) => w.minimized), [wm.wins]);
+
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -77,6 +114,9 @@ export function Desktop() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // ✅ Don’t hijack keys while typing (fixes “can’t type spaces”)
+      if (isTypingTarget(e.target)) return;
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setSpotlightOpen((v) => !v);
@@ -110,7 +150,7 @@ export function Desktop() {
 
   return (
     <AppRegistryProvider apps={apps}>
-      <LauncherProvider openApp={openApp}>
+      <LauncherProvider openApp={openApp} openUrl={openUrl}>
         <div className="mac-root">
           <div className="wallpaper" />
 
@@ -125,13 +165,13 @@ export function Desktop() {
               ⌘K Spotlight
             </div>
 
-            {/* subtle “data source” indicator */}
             <div style={{ marginLeft: 12, fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
               {appsSource === "api" ? "API" : "Local"}
             </div>
           </div>
 
           <div
+            ref={desktopRef}
             className="desktop"
             onContextMenu={(e) => {
               e.preventDefault();
@@ -159,22 +199,41 @@ export function Desktop() {
             <WindowManager
               wins={wm.wins}
               onClose={wm.close}
+              onMinimize={wm.minimize}
+              onToggleMaximize={wm.toggleMaximize}
               onFocus={wm.focus}
               onMove={wm.move}
               onResize={wm.resize}
             />
 
+            {/* Dock */}
             <div className="dock">
-              {dockApps.map((app) => (
-                <div
-                  key={app.id}
-                  className="dock-item"
-                  onClick={() => openApp(app.id)}
-                  title={app.name}
-                >
-                  <img src={app.icon} alt={app.name} />
-                </div>
-              ))}
+              <div className="dock-left">
+                {dockApps.map((app) => (
+                  <div
+                    key={app.id}
+                    className="dock-item"
+                    onClick={() => openApp(app.id)}
+                    title={app.name}
+                  >
+                    <img src={app.icon} alt={app.name} />
+                  </div>
+                ))}
+              </div>
+
+              <div className="dock-right">
+                {minimizedWins.map((w) => (
+                  <button
+                    key={w.winId}
+                    className="dock-minimized"
+                    onClick={() => wm.restore(w.winId)}
+                    title={`Restore: ${w.title}`}
+                    type="button"
+                  >
+                    {w.title}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {spotlightOpen && (
@@ -187,11 +246,7 @@ export function Desktop() {
                 />
                 <div className="spotlight-results">
                   {(results.length ? results : apps.slice(0, 8)).map((app) => (
-                    <div
-                      key={app.id}
-                      className="spotlight-item"
-                      onClick={() => openApp(app.id)}
-                    >
+                    <div key={app.id} className="spotlight-item" onClick={() => openApp(app.id)}>
                       <img src={app.icon} alt="" style={{ width: 18, height: 18 }} />
                       <div>
                         <div style={{ fontWeight: 600 }}>{app.name}</div>
@@ -204,12 +259,7 @@ export function Desktop() {
             )}
 
             {menu && (
-              <ContextMenu
-                x={menu.x}
-                y={menu.y}
-                onClose={() => setMenu(null)}
-                items={contextItems}
-              />
+              <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} items={contextItems} />
             )}
 
             {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}

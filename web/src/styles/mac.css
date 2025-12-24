@@ -6,6 +6,10 @@
   --text: rgba(255,255,255,0.92);
   --muted: rgba(255,255,255,0.65);
   --shadow: 0 18px 60px rgba(0,0,0,0.55);
+  --menu-h: 34px;
+  --dock-gap: 14px;          /* space between dock and bottom edge */
+  --dock-h: 78px;            /* adjust if your dock is taller */
+  --work-bottom: calc(var(--dock-h) + var(--dock-gap));
 }
 
 * { box-sizing: border-box; }
@@ -18,6 +22,8 @@ html, body, #root {
   color: var(--text);
 }
 
+/* ---------------- Root / Desktop ---------------- */
+
 .mac-root {
   height: 100%;
   width: 100%;
@@ -25,6 +31,7 @@ html, body, #root {
   background: radial-gradient(1200px 800px at 30% 20%, rgba(100, 130, 255, 0.22), transparent 60%),
               radial-gradient(1100px 900px at 70% 80%, rgba(255, 120, 180, 0.14), transparent 55%),
               linear-gradient(180deg, #05070a 0%, #0b0f14 100%);
+  position: relative;
 }
 
 .wallpaper {
@@ -60,8 +67,10 @@ html, body, #root {
 
 .desktop {
   position: absolute;
-  inset: 34px 0 0 0;
+  inset: var(--menu-h) 0 0 0;
 }
+
+/* ---------------- Desktop Icons ---------------- */
 
 .desktop-icons {
   position: absolute;
@@ -100,20 +109,53 @@ html, body, #root {
   text-shadow: 0 1px 8px rgba(0,0,0,0.7);
 }
 
+/* ---------------- Dock (Merged) ----------------
+   Keep mac.css look, but add App.css split layout support.
+*/
+
 .dock {
   position: absolute;
   left: 50%;
-  bottom: 14px;
+  bottom: var(--dock-gap);
   transform: translateX(-50%);
+
   display: flex;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+
+  height: var(--dock-h);
   padding: 10px 12px;
+
   border-radius: 18px;
   background: rgba(0,0,0,0.45);
   border: 1px solid rgba(255,255,255,0.10);
   backdrop-filter: blur(18px);
-  gap: 10px;
+
   z-index: 9998;
+}
+
+/* left side: normal dock icons */
+.dock-left {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+/* right side: minimized windows pills */
+.dock-right {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+
+  max-width: 40vw;
+  overflow-x: auto;
+  overflow-y: hidden;
+
+  padding-left: 12px;
+  border-left: 1px solid rgba(255,255,255,0.12);
 }
 
 .dock-item {
@@ -122,7 +164,7 @@ html, body, #root {
   border-radius: 14px;
   display: grid;
   place-items: center;
-  transition: transform 120ms ease;
+  transition: transform 120ms ease, background 120ms ease;
 }
 
 .dock-item:hover {
@@ -131,13 +173,35 @@ html, body, #root {
 }
 
 .dock-item img {
-  width: 40px;
-  height: 40px;
+  width: 46px;
+  height: 46px;
   object-fit: contain;
 }
 
+/* minimized pills */
+.dock-minimized {
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(0,0,0,0.25);
+  color: rgba(255,255,255,0.85);
+  border-radius: 12px;
+  padding: 7px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dock-minimized:hover {
+  background: rgba(255,255,255,0.10);
+}
+
+/* ---------------- Windows (Merged + Scroll Fix) ----------------
+   Keep mac.css visuals, apply App.css flex layout so .window-body scroll works.
+*/
+
 .window {
   position: absolute;
+  display: flex;              /* ✅ for scrolling body */
+  flex-direction: column;     /* ✅ */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -146,14 +210,19 @@ html, body, #root {
   backdrop-filter: blur(18px);
 }
 
+/* titlebar: keep mac.css look BUT use App.css grid layout */
 .window-titlebar {
+  flex: 0 0 auto;
   height: 40px;
-  display: flex;
+
+  display: grid;              /* ✅ */
+  grid-template-columns: auto 1fr;
   align-items: center;
-  padding: 0 12px;
-  gap: 10px;
-  background: rgba(0,0,0,0.25);
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+
+  background: rgba(0,0,0,0.28);
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+  backdrop-filter: blur(14px);
+
   cursor: grab;
 }
 
@@ -161,14 +230,20 @@ html, body, #root {
 
 .win-controls {
   display: flex;
+  align-items: center;
   gap: 8px;
-  margin-right: 6px;
+  padding: 0 10px;
 }
 
 .win-dot {
   width: 12px;
   height: 12px;
-  border-radius: 50%;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,0.25);
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+  position: relative;
   opacity: 0.95;
 }
 
@@ -176,13 +251,42 @@ html, body, #root {
 .win-dot.yellow { background: #febc2e; }
 .win-dot.green { background: #28c840; }
 
+/* hover glyphs like macOS */
+.win-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: rgba(0,0,0,0.65);
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.window-titlebar:hover .win-dot::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.win-dot.red::before { content: "×"; }
+.win-dot.yellow::before { content: "–"; }
+.win-dot.green::before { content: "⤢"; }
+
 .window-title {
   font-size: 13px;
   color: rgba(255,255,255,0.88);
+  user-select: none;
+  padding-right: 10px;
 }
 
+/* ✅ Critical: allow CMS + editors to scroll inside window */
 .window-body {
-  height: calc(100% - 40px);
+  flex: 1 1 auto;             /* ✅ */
+  min-height: 0;              /* ✅ needed for nested flex scroll */
+  overflow: auto;             /* ✅ scrolling */
   background: rgba(10, 12, 16, 0.35);
 }
 
@@ -195,6 +299,8 @@ html, body, #root {
   cursor: se-resize;
   background: linear-gradient(135deg, transparent 55%, rgba(255,255,255,0.18));
 }
+
+/* ---------------- Spotlight ---------------- */
 
 .spotlight {
   position: absolute;
