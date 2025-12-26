@@ -1,7 +1,7 @@
 import type { ApiApp } from "./adapters";
 
 export const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+  import.meta.env.VITE_API_BASE_URL ?? "https://api.edvni.dev";
 
 /** ---------- Shared Types ---------- */
 
