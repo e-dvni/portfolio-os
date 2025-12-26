@@ -4,15 +4,43 @@ default: &default
   pool: <%= ENV.fetch("RAILS_MAX_THREADS", 5) %>
 
 development:
-  <<: *default
-  database: portfolio_os_development
+  primary:
+    <<: *default
+    database: portfolio_os_development
+  cache:
+    <<: *default
+    database: portfolio_os_development
+  queue:
+    <<: *default
+    database: portfolio_os_development
+  cable:
+    <<: *default
+    database: portfolio_os_development
 
 test:
-  <<: *default
-  database: portfolio_os_test
+  primary:
+    <<: *default
+    database: portfolio_os_test
+  cache:
+    <<: *default
+    database: portfolio_os_test
+  queue:
+    <<: *default
+    database: portfolio_os_test
+  cable:
+    <<: *default
+    database: portfolio_os_test
 
 production:
-  <<: *default
-  database: portfolio_os_production
-  username: portfolio_os
-  password: <%= ENV["PORTFOLIO_OS_DATABASE_PASSWORD"] %>
+  primary:
+    <<: *default
+    url: <%= ENV.fetch("DATABASE_URL") %>
+  cache:
+    <<: *default
+    url: <%= ENV.fetch("DATABASE_URL") %>
+  queue:
+    <<: *default
+    url: <%= ENV.fetch("DATABASE_URL") %>
+  cable:
+    <<: *default
+    url: <%= ENV.fetch("DATABASE_URL") %>
