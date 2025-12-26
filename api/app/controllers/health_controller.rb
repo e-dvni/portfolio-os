@@ -3,16 +3,17 @@ class HealthController < ActionController::API
     render json: {
       ok: true,
       service: "portfolio-os-api",
-      time: Time.now.utc.iso8601
+      time: Time.current.iso8601
     }, status: :ok
   end
 
   def db
     ActiveRecord::Base.connection.execute("SELECT 1")
+
     render json: {
       ok: true,
       db: "ok",
-      time: Time.now.utc.iso8601
+      time: Time.current.iso8601
     }, status: :ok
   rescue => e
     render json: {

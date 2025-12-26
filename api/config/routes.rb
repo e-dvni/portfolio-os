@@ -1,11 +1,11 @@
 Rails.application.routes.draw do
   # Health checks (Render-friendly)
-  get "/health", to: "health#show"
-  get "/health/db", to: "health#db"
+  get "health",    to: "health#show"
+  get "health/db", to: "health#db"
 
   namespace :api do
-    get "/health", to: "health#show"
-    get "/health/db", to: "health#db"
+    get "health",    to: "health#show"
+    get "health/db", to: "health#db"
 
     resources :apps, only: [:index]
     resources :notes, only: [:index, :show], param: :slug
