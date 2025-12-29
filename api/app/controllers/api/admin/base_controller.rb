@@ -1,3 +1,4 @@
+# app/controllers/api/admin/base_controller.rb
 module Api
   module Admin
     class BaseController < GuardController
@@ -8,7 +9,10 @@ module Api
       def require_admin!
         token = request.headers["Authorization"].to_s.sub(/^Bearer\s+/i, "")
         @current_admin = AdminUser.find_by_token(token)
-        render json: { error: "Unauthorized" }, status: :unauthorized unless @current_admin
+
+        return if @current_admin
+
+        render json: { error: "Unauthorized" }, status: :unauthorized
       end
     end
   end

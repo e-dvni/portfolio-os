@@ -7,10 +7,7 @@ module Api
       private
 
       def ensure_enabled!
-        # Treat only explicit truthy values as enabled.
-        # ActiveModel boolean casting: "true", "1", "yes", "on" => true
         enabled = ActiveModel::Type::Boolean.new.cast(ENV.fetch("ENABLE_ADMIN_API", "false"))
-
         return if enabled
 
         render json: { error: "Admin API disabled" }, status: :forbidden
